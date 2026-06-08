@@ -5,11 +5,16 @@ import "sort"
 // BuildForest reconstructs the PR forest. A PR's parent is the PR whose head
 // branch equals this PR's base branch (branch topology). When branch topology
 // finds no parent, an `upstream: #N` link in the body is used as a fallback,
-// provided #N is present in the input. PRs with no resolved parent are roots.
-// Roots and children are sorted by PR number for stable output. When two input
-// PRs share the same head branch, the last one in PR-number order wins as the
-// branch parent (the earlier one becomes unreachable via topology).
-func BuildForest(prs []PullRequest) []*Node {
+// provided #N is present in the input. However, when a PR targets the default
+// branch and the upstream: link points to an open PR (a stale link), the link
+// is ignored and the PR remains a root. A non-open (merged/closed) upstream
+// target is still honoured even when the base is the default branch, since the
+// merge caused GitHub to retarget the PR and the link records true lineage.
+// PRs with no resolved parent are roots. Roots and children are sorted by PR
+// number for stable output. When two input PRs share the same head branch, the
+// last one in PR-number order wins as the branch parent (the earlier one
+// becomes unreachable via topology).
+func BuildForest(prs []PullRequest, defaultBranch string) []*Node {
 	nodes := make(map[int]*Node, len(prs))
 	byHead := make(map[string]int, len(prs)) // live head branch -> PR number
 	for _, pr := range prs {
@@ -34,8 +39,14 @@ func BuildForest(prs []PullRequest) []*Node {
 		if p, ok := byHead[pr.BaseRef]; ok && p != pr.Number {
 			parent = p
 		} else if up := ParseUpstream(pr.Body); up != 0 && up != pr.Number {
-			if _, ok := nodes[up]; ok {
-				parent = up
+			if upNode, ok := nodes[up]; ok {
+				// When a PR targets the default branch, only allow an upstream:
+				// link to re-parent it if the referenced PR is non-open (i.e.
+				// merged or closed). An open-PR link means the upstream: is stale
+				// — the PR genuinely belongs at the root.
+				if defaultBranch == "" || pr.BaseRef != defaultBranch || !upNode.PR.State.IsLive() {
+					parent = up
+				}
 			}
 		}
 		if parent != 0 && !createsCycle(parentOf, pr.Number, parent) {

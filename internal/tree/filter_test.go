@@ -11,7 +11,7 @@ func sampleForest() []*Node {
 		{Number: 2, State: StateOpen, Author: "bob", Reviewers: []string{"alice"}, BaseRef: "a", HeadRef: "b"},
 		{Number: 3, State: StateOpen, Author: "carol", BaseRef: "main", HeadRef: "c"},
 	}
-	return BuildForest(prs)
+	return BuildForest(prs, "main")
 }
 
 func TestSelectTrees_Mine(t *testing.T) {

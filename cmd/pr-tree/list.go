@@ -43,7 +43,7 @@ func runList(ctx context.Context, repoFlag string, mine, toReview bool, out io.W
 		return fmt.Errorf("looking up authenticated user: %w", err)
 	}
 
-	prs, _, err := client.FetchOpenPRs(ctx, repo)
+	prs, defaultBranch, err := client.FetchOpenPRs(ctx, repo)
 	if err != nil {
 		return fmt.Errorf("fetching PRs for %s: %w", repo, err)
 	}
@@ -52,7 +52,7 @@ func runList(ctx context.Context, repoFlag string, mine, toReview bool, out io.W
 	// open set, so they can anchor trees (the only way to place merged nodes).
 	prs = append(prs, fetchMissingParents(ctx, client, repo, prs)...)
 
-	forest := tree.BuildForest(prs)
+	forest := tree.BuildForest(prs, defaultBranch)
 	filter := tree.Filter{Mine: mine, ToReview: toReview, Viewer: viewer}
 	selected := tree.SelectTrees(forest, filter)
 	pending := tree.ReviewPending(forest, filter)
