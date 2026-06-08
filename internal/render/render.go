@@ -10,14 +10,15 @@ import (
 
 // ANSI SGR codes.
 const (
-	ansiReset   = "0"
-	ansiBold    = "1"
-	ansiDim     = "2"
-	ansiRed     = "31"
-	ansiGreen   = "32"
-	ansiYellow  = "33"
-	ansiMagenta = "35"
-	ansiCyan    = "36"
+	ansiReset     = "0"
+	ansiBold      = "1"
+	ansiDim       = "2"
+	ansiUnderline = "4"
+	ansiRed       = "31"
+	ansiGreen     = "32"
+	ansiYellow    = "33"
+	ansiMagenta   = "35"
+	ansiCyan      = "36"
 )
 
 // Options controls rendering details that depend on the active filter.
@@ -35,6 +36,16 @@ func style(s string, color bool, codes ...string) string {
 		return s
 	}
 	return "\x1b[" + strings.Join(codes, ";") + "m" + s + "\x1b[" + ansiReset + "m"
+}
+
+// underline wraps s so the whole run is underlined. The underline is re-armed
+// after each inner reset so it stays continuous across colored segments and the
+// uncolored glue between them (a single outer wrap would be cancelled by the
+// first segment's reset).
+func underline(s string) string {
+	on := "\x1b[" + ansiUnderline + "m"
+	reset := "\x1b[" + ansiReset + "m"
+	return on + strings.ReplaceAll(s, reset, reset+on) + reset
 }
 
 // statusCodes returns the SGR codes for a PR state, or nil for unknown states.
@@ -90,9 +101,15 @@ func nodeLine(pr tree.PullRequest, opts Options) string {
 	}
 	parts = append(parts, style(string(pr.State), opts.Color, statusCodes(pr.State)...))
 
-	line := num + " (" + strings.Join(parts, ", ") + ")"
-	if opts.ReviewPending[pr.Number] {
-		line += " " + style("<== Review pending", opts.Color, ansiBold, ansiYellow)
+	info := num + " (" + strings.Join(parts, ", ") + ")"
+	pending := opts.ReviewPending[pr.Number]
+	// Underline the info portion (not the marker) on review-pending lines. This
+	// is color-gated: with color off, output stays plain.
+	if pending && opts.Color {
+		info = underline(info)
 	}
-	return line
+	if pending {
+		info += " " + style("<== Review pending", opts.Color, ansiBold, ansiYellow)
+	}
+	return info
 }
