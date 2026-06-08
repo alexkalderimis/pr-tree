@@ -21,6 +21,9 @@ func newListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List PRs as trees",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// TTY detection probes os.Stdout directly (not cmd.OutOrStdout());
+			// in normal use they are the same, and this matches typical CLI
+			// behavior of basing color on the process's real stdout.
 			color := colorEnabled(noColor, os.Getenv("NO_COLOR"), term.IsTerminal(int(os.Stdout.Fd())))
 			return runList(cmd.Context(), repoFlag, mine, toReview, color, cmd.OutOrStdout())
 		},

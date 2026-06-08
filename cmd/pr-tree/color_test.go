@@ -15,6 +15,7 @@ func TestColorEnabled(t *testing.T) {
 		{"--no-color overrides tty", true, "", true, false},
 		{"NO_COLOR set overrides tty", false, "1", true, false},
 		{"NO_COLOR empty is ignored", false, "", true, true},
+		{"NO_COLOR disables independent of flag and tty", false, "1", false, false},
 		{"all off", true, "1", false, false},
 	}
 	for _, c := range cases {
