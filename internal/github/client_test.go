@@ -1,0 +1,80 @@
+package github
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/alexkalderimis/pr-tree/internal/config"
+)
+
+func TestFetchOpenPRs(t *testing.T) {
+	const resp = `{"data":{"repository":{"defaultBranchRef":{"name":"main"},
+	  "pullRequests":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[
+	    {"number":1,"title":"ROOT","body":"","isDraft":false,"state":"OPEN",
+	     "author":{"login":"alice"},"baseRefName":"main","headRefName":"a",
+	     "reviewRequests":{"nodes":[{"requestedReviewer":{"login":"bob"}}]}},
+	    {"number":2,"title":"STEM","body":"upstream: #1","isDraft":true,"state":"OPEN",
+	     "author":{"login":"bob"},"baseRefName":"a","headRefName":"b",
+	     "reviewRequests":{"nodes":[]}}
+	  ]}}}}`
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if !strings.Contains(string(body), "pullRequests") {
+			t.Errorf("query missing pullRequests: %s", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, resp)
+	}))
+	defer srv.Close()
+
+	c := &Client{token: "t", endpoint: srv.URL, http: srv.Client()}
+	prs, defaultBranch, err := c.FetchOpenPRs(context.Background(), config.Repo{Owner: "o", Name: "n"})
+	if err != nil {
+		t.Fatalf("FetchOpenPRs: %v", err)
+	}
+	if defaultBranch != "main" {
+		t.Fatalf("defaultBranch = %q, want main", defaultBranch)
+	}
+	if len(prs) != 2 {
+		t.Fatalf("got %d PRs, want 2", len(prs))
+	}
+	if prs[0].State != "OPEN" || prs[0].Author != "alice" || prs[0].Reviewers[0] != "bob" {
+		t.Fatalf("PR0 decoded wrong: %+v", prs[0])
+	}
+	if prs[1].State != "DRAFT" { // isDraft true -> DRAFT
+		t.Fatalf("PR1 state = %q, want DRAFT", prs[1].State)
+	}
+}
+
+func TestViewer(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"data":{"viewer":{"login":"alice"}}}`)
+	}))
+	defer srv.Close()
+
+	c := &Client{token: "t", endpoint: srv.URL, http: srv.Client()}
+	login, err := c.Viewer(context.Background())
+	if err != nil || login != "alice" {
+		t.Fatalf("Viewer = %q, err %v", login, err)
+	}
+}
+
+func TestDo_GraphQLError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, `{"errors":[{"message":"bad query"}]}`)
+	}))
+	defer srv.Close()
+
+	c := &Client{token: "t", endpoint: srv.URL, http: srv.Client()}
+	var out json.RawMessage
+	err := c.do(context.Background(), "query{}", nil, &out)
+	if err == nil || !strings.Contains(err.Error(), "bad query") {
+		t.Fatalf("expected GraphQL error, got %v", err)
+	}
+}
