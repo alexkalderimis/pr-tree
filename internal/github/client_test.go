@@ -33,7 +33,7 @@ func TestFetchOpenPRs(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &Client{token: "t", endpoint: srv.URL, http: srv.Client()}
+	c := &Client{token: "t", endpoint: srv.URL, httpClient: srv.Client()}
 	prs, defaultBranch, err := c.FetchOpenPRs(context.Background(), config.Repo{Owner: "o", Name: "n"})
 	if err != nil {
 		t.Fatalf("FetchOpenPRs: %v", err)
@@ -58,7 +58,7 @@ func TestViewer(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &Client{token: "t", endpoint: srv.URL, http: srv.Client()}
+	c := &Client{token: "t", endpoint: srv.URL, httpClient: srv.Client()}
 	login, err := c.Viewer(context.Background())
 	if err != nil || login != "alice" {
 		t.Fatalf("Viewer = %q, err %v", login, err)
@@ -71,10 +71,38 @@ func TestDo_GraphQLError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &Client{token: "t", endpoint: srv.URL, http: srv.Client()}
+	c := &Client{token: "t", endpoint: srv.URL, httpClient: srv.Client()}
 	var out json.RawMessage
 	err := c.do(context.Background(), "query{}", nil, &out)
 	if err == nil || !strings.Contains(err.Error(), "bad query") {
 		t.Fatalf("expected GraphQL error, got %v", err)
+	}
+}
+
+func TestFetchPRsByNumber(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(body), `"number":1`) {
+			io.WriteString(w, `{"data":{"repository":{"pullRequest":{
+				"number":1,"title":"MERGED ROOT","body":"","isDraft":false,"state":"MERGED",
+				"author":{"login":"alice"},"baseRefName":"main","headRefName":"a",
+				"reviewRequests":{"nodes":[]}}}}}`)
+			return
+		}
+		// number 2: not found / inaccessible -> null pullRequest, must be skipped
+		io.WriteString(w, `{"data":{"repository":{"pullRequest":null}}}`)
+	}))
+	defer srv.Close()
+
+	c := &Client{token: "t", endpoint: srv.URL, httpClient: srv.Client()}
+	prs, err := c.FetchPRsByNumber(context.Background(), config.Repo{Owner: "o", Name: "n"}, []int{1, 2})
+	if err != nil {
+		t.Fatalf("FetchPRsByNumber: %v", err)
+	}
+	if len(prs) != 1 {
+		t.Fatalf("got %d PRs, want 1 (the nil one skipped)", len(prs))
+	}
+	if prs[0].Number != 1 || prs[0].State != "MERGED" {
+		t.Fatalf("PR decoded wrong: %+v", prs[0])
 	}
 }

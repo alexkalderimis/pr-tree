@@ -15,14 +15,14 @@ const defaultEndpoint = "https://api.github.com/graphql"
 
 // Client queries the GitHub GraphQL API.
 type Client struct {
-	token    string
-	endpoint string
-	http     *http.Client
+	token      string
+	endpoint   string
+	httpClient *http.Client
 }
 
 // New returns a Client authenticated with the given token.
 func New(token string) *Client {
-	return &Client{token: token, endpoint: defaultEndpoint, http: http.DefaultClient}
+	return &Client{token: token, endpoint: defaultEndpoint, httpClient: http.DefaultClient}
 }
 
 // do executes a GraphQL query and decodes the `data` field into out.
@@ -38,7 +38,7 @@ func (c *Client) do(ctx context.Context, query string, vars map[string]any, out 
 	req.Header.Set("Authorization", "bearer "+c.token)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.http.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return err
 	}
