@@ -89,10 +89,16 @@ func (n prNode) toPR() tree.PullRequest {
 	if n.State == "OPEN" && n.IsDraft {
 		state = tree.StateDraft
 	}
+	// Dedupe reviewer logins: GitHub can return the same reviewer more than
+	// once (e.g. a re-requested review), and non-User reviewers (teams) yield
+	// an empty login via the `... on User` fragment.
 	var reviewers []string
+	seen := make(map[string]bool)
 	for _, rr := range n.ReviewRequests.Nodes {
-		if rr.RequestedReviewer.Login != "" {
-			reviewers = append(reviewers, rr.RequestedReviewer.Login)
+		login := rr.RequestedReviewer.Login
+		if login != "" && !seen[login] {
+			seen[login] = true
+			reviewers = append(reviewers, login)
 		}
 	}
 	return tree.PullRequest{
