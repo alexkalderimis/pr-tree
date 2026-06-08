@@ -40,10 +40,11 @@ Other commands:
 - `replant` - rebase all descendants (infers the current PR from the current branch, accepts `[#PR_ID]` argument)
 - `annotate` - update the PR descriptions of all PRs in the tree with a `links:` section including `upstream` and `downstream` links, so that the stack is navigable within GitHub
 
+> **Note:** `list` is implemented today; `annotate` and `replant` are planned. See [ROADMAP.md](ROADMAP.md).
 
+## Development
 
- 
-
-
-
+- [DEVELOPMENT.md](DEVELOPMENT.md) — repository structure, build/test/run commands, and architecture.
+- [AGENTS.md](AGENTS.md) — conventions for AI coding agents.
+- [ROADMAP.md](ROADMAP.md) — build status across `list` → `annotate` → `replant`.
 

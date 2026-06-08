@@ -1,0 +1,6 @@
+# Compiled binary
+/pr-tree
+
+# Test/coverage output
+*.out
+*.test
