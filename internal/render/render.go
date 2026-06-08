@@ -34,7 +34,7 @@ func style(s string, color bool, codes ...string) string {
 	if !color || len(codes) == 0 {
 		return s
 	}
-	return "\x1b[" + strings.Join(codes, ";") + "m" + s + "\x1b[0m"
+	return "\x1b[" + strings.Join(codes, ";") + "m" + s + "\x1b[" + ansiReset + "m"
 }
 
 // statusCodes returns the SGR codes for a PR state, or nil for unknown states.
