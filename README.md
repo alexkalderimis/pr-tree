@@ -19,8 +19,8 @@ List your PRs:
 #1234 (ROOT, reviewer: @abc, MERGED)
 └ #1235 (STEM, reviewer: @xyz, OPEN)
   └ #1236 (LEAF-1, reviewer: @foo, OPEN)
-  └ #1236 (LEAF-2, reviewer: @bar, DRAFT)
-#1234 (ANOTHER ROOT, reviewer: @abc, OPEN)
+  └ #1237 (LEAF-2, reviewer: @bar, DRAFT)
+#1240 (ANOTHER ROOT, reviewer: @abc, OPEN)
 ```
 
 List PRs that are in your review queue, including the context of other PRs in the tree:
@@ -32,7 +32,7 @@ List PRs that are in your review queue, including the context of other PRs in th
 └ #1235 (B, OPEN) <== Review pending
   └ #1236 (C, reviewer: @bar, OPEN)
     └ #1237 (D, reviewer: @bar, DRAFT)
-#1234 (Another one, OPEN) <== Review pending
+#1240 (Another one, OPEN) <== Review pending
 ```
 
 Other commands:
