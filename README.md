@@ -19,7 +19,7 @@ List your PRs:
 #1234 (ROOT, reviewer: @abc, MERGED)
 └ #1235 (STEM, reviewer: @xyz, OPEN)
   └ #1236 (LEAF-1, reviewer: @foo, OPEN)
-  └ #1236 (LEAF-2, reviewer: @bar, DRAFT)
+  └ #1237 (LEAF-2, reviewer: @bar, DRAFT)
 #1234 (ANOTHER ROOT, reviewer: @abc, OPEN)
 ```
 

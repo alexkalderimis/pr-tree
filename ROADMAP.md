@@ -7,25 +7,25 @@ Tracking the build of `pr-tree`. See the full design in
 
 | Command | State | Notes |
 |---|---|---|
-| `list` | 🚧 In progress | Read-only tree rendering with `--mine` / `--to-review`. First build. |
+| `list` | ✅ Done | Read-only tree rendering with `--mine` / `--to-review`. First build. |
 | `annotate` | ⬜ Planned | Upsert a `links:` (`upstream`/`downstream`) section into PR descriptions. |
 | `replant` | ⬜ Planned | Rebase + force-push all descendants of a PR. Risky; careful design needed. |
 
 ## Foundations (shared, built alongside `list`)
 
-- [ ] `internal/config` — repo detection from git `origin`, `--repo` override.
-- [ ] `internal/github` — token discovery (`gh auth token` → env), GraphQL client, PR fetch.
-- [ ] `internal/tree` — forest building (base→head topology), `links:` parsing, filter/prune.
-- [ ] `internal/render` — forest → text with connectors and markers.
-- [ ] `cmd/pr-tree` — cobra CLI wiring.
+- [x] `internal/config` — repo detection from git `origin`, `--repo` override.
+- [x] `internal/github` — token discovery (`gh auth token` → env), GraphQL client, PR fetch.
+- [x] `internal/tree` — forest building (base→head topology), `links:` parsing, filter/prune.
+- [x] `internal/render` — forest → text with connectors and markers.
+- [x] `cmd/pr-tree` — cobra CLI wiring.
 
 ## `list` — first build
 
-- [ ] Fetch open PRs (OPEN + DRAFT) via GraphQL; best-effort merged/closed.
-- [ ] Build forest; place merged nodes via `links:` (documented limitation).
-- [ ] `--mine`, `--to-review` (with `<== Review pending`), default (all), union.
-- [ ] Render matching the README format.
-- [ ] Unit tests for `tree` / `render`; mocked test for `github`.
+- [x] Fetch open PRs (OPEN + DRAFT) via GraphQL; best-effort merged/closed (`links:`-referenced parents).
+- [x] Build forest; place merged nodes via `links:` (documented limitation).
+- [x] `--mine`, `--to-review` (with `<== Review pending`), default (all), union.
+- [x] Render matching the README format.
+- [x] Unit tests for `tree` / `render`; mocked test for `github`.
 
 ## `annotate` — next
 
