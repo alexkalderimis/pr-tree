@@ -43,3 +43,21 @@ func TestRender_NoReviewer(t *testing.T) {
 		t.Fatalf("Render mismatch:\n--- got ---\n%q\n--- want ---\n%q", got, want)
 	}
 }
+
+func TestRender_Colored(t *testing.T) {
+	forest := []*tree.Node{
+		{
+			PR: tree.PullRequest{Number: 1, Title: "ROOT", State: tree.StateMerged},
+			Children: []*tree.Node{
+				{PR: tree.PullRequest{Number: 2, Title: "LEAF", State: tree.StateOpen, Reviewers: []string{"bob"}}},
+			},
+		},
+	}
+
+	got := Render(forest, Options{Color: true, ReviewPending: map[int]bool{2: true}})
+	want := "\x1b[36m#1\x1b[0m (\x1b[1mROOT\x1b[0m, \x1b[35mMERGED\x1b[0m)\n" +
+		"\x1b[2m└ \x1b[0m\x1b[36m#2\x1b[0m (\x1b[1mLEAF\x1b[0m, \x1b[2mreviewer:\x1b[0m \x1b[33m@bob\x1b[0m, \x1b[32mOPEN\x1b[0m) \x1b[1;33m<== Review pending\x1b[0m\n"
+	if got != want {
+		t.Fatalf("colored render mismatch:\n--- got ---\n%q\n--- want ---\n%q", got, want)
+	}
+}
