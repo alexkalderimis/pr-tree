@@ -33,6 +33,17 @@ How to build, test, and work on `pr-tree`.
 Before committing, the working expectation is: `gofmt -l .` is empty,
 `go vet ./...` is clean, and `go test ./...` passes.
 
+### Make shortcuts
+
+A `Makefile` wraps the most common tasks:
+
+| Command | Does |
+|---|---|
+| `make` / `make pr-tree` | Build the `pr-tree` binary (rebuilds only when sources change) |
+| `make test` | `go test ./...` |
+| `make install` | `go install ./cmd/pr-tree` (into `go env GOBIN`, else `GOPATH/bin`) |
+| `make clean` | Remove the locally built binary |
+
 ## Repository structure
 
 Pure logic is deliberately separated from I/O so the interesting parts are

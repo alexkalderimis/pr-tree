@@ -14,11 +14,14 @@ is done and what is next (`list` → `annotate` → `replant`).
 
 ```sh
 go build ./...                                   # build
-go test ./...                                    # run all tests
+go test ./...                                    # run all tests (or: make test)
 go vet ./...                                      # vet
 gofmt -l .                                        # must print nothing
 go run ./cmd/pr-tree list --repo owner/name      # run (needs a GitHub token)
 ```
+
+A `Makefile` provides `make pr-tree` (build), `make test`, `make install`, and
+`make clean`.
 
 A GitHub token is discovered from `gh auth token`, then `GH_TOKEN`, then
 `GITHUB_TOKEN`. Pure-logic tests need no token.
