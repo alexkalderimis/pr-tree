@@ -2,6 +2,7 @@
 package render
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/alexkalderimis/pr-tree/internal/tree"
@@ -47,31 +48,9 @@ func nodeLine(pr tree.PullRequest, opts Options) string {
 	}
 	parts = append(parts, string(pr.State))
 
-	line := "#" + itoa(pr.Number) + " (" + strings.Join(parts, ", ") + ")"
+	line := "#" + strconv.Itoa(pr.Number) + " (" + strings.Join(parts, ", ") + ")"
 	if opts.ReviewPending[pr.Number] {
 		line += " <== Review pending"
 	}
 	return line
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		buf[i] = '-'
-	}
-	return string(buf[i:])
 }
