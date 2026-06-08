@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/alexkalderimis/pr-tree/internal/config"
 	"github.com/alexkalderimis/pr-tree/internal/github"
@@ -14,20 +16,22 @@ import (
 )
 
 func newListCmd() *cobra.Command {
-	var mine, toReview bool
+	var mine, toReview, noColor bool
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List PRs as trees",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runList(cmd.Context(), repoFlag, mine, toReview, cmd.OutOrStdout())
+			color := colorEnabled(noColor, os.Getenv("NO_COLOR"), term.IsTerminal(int(os.Stdout.Fd())))
+			return runList(cmd.Context(), repoFlag, mine, toReview, color, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().BoolVar(&mine, "mine", false, "Only show trees containing PRs you authored")
 	cmd.Flags().BoolVar(&toReview, "to-review", false, "Only show trees containing PRs awaiting your review")
+	cmd.Flags().BoolVar(&noColor, "no-color", false, "Disable colored output")
 	return cmd
 }
 
-func runList(ctx context.Context, repoFlag string, mine, toReview bool, out io.Writer) error {
+func runList(ctx context.Context, repoFlag string, mine, toReview, color bool, out io.Writer) error {
 	repo, err := config.Resolve(repoFlag)
 	if err != nil {
 		return err
@@ -57,7 +61,7 @@ func runList(ctx context.Context, repoFlag string, mine, toReview bool, out io.W
 	selected := tree.SelectTrees(forest, filter)
 	pending := tree.ReviewPending(forest, filter)
 
-	text := render.Render(selected, render.Options{ReviewPending: pending})
+	text := render.Render(selected, render.Options{ReviewPending: pending, Color: color})
 	_, err = out.Write([]byte(text))
 	return err
 }
