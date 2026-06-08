@@ -6,20 +6,29 @@ import "sort"
 // branch equals this PR's base branch (branch topology). When branch topology
 // finds no parent, an `upstream: #N` link in the body is used as a fallback,
 // provided #N is present in the input. PRs with no resolved parent are roots.
-// Roots and children are sorted by PR number for stable output.
+// Roots and children are sorted by PR number for stable output. When two input
+// PRs share the same head branch, the last one in PR-number order wins as the
+// branch parent (the earlier one becomes unreachable via topology).
 func BuildForest(prs []PullRequest) []*Node {
 	nodes := make(map[int]*Node, len(prs))
 	byHead := make(map[string]int, len(prs)) // live head branch -> PR number
-	for i := range prs {
-		pr := prs[i]
+	for _, pr := range prs {
 		nodes[pr.Number] = &Node{PR: pr}
 		if pr.State.IsLive() && pr.HeadRef != "" {
 			byHead[pr.HeadRef] = pr.Number
 		}
 	}
 
+	// Collect and sort PR numbers so parent assignment is deterministic.
+	nums := make([]int, 0, len(nodes))
+	for num := range nodes {
+		nums = append(nums, num)
+	}
+	sort.Ints(nums)
+
 	parentOf := make(map[int]int, len(prs)) // child number -> parent number
-	for _, n := range nodes {
+	for _, num := range nums {
+		n := nodes[num]
 		pr := n.PR
 		parent := 0
 		if p, ok := byHead[pr.BaseRef]; ok && p != pr.Number {
@@ -35,7 +44,8 @@ func BuildForest(prs []PullRequest) []*Node {
 	}
 
 	var roots []*Node
-	for num, n := range nodes {
+	for _, num := range nums {
+		n := nodes[num]
 		if parent, ok := parentOf[num]; ok {
 			p := nodes[parent]
 			p.Children = append(p.Children, n)

@@ -28,7 +28,7 @@ type PullRequest struct {
 	Reviewers []string // requested reviewer logins
 	BaseRef   string   // branch this PR merges into
 	HeadRef   string   // this PR's branch
-	Body      string   // PR description (parsed for links:)
+	Body      string   // PR description (parsed for upstream links)
 }
 
 // Node is a PR positioned within the forest, with its child PRs.

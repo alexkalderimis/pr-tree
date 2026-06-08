@@ -14,6 +14,7 @@ func TestParseUpstream(t *testing.T) {
 		{"absent", "no links here", 0},
 		{"downstream only", "downstream: #99", 0},
 		{"empty", "", 0},
+		{"multiple", "upstream: #1\nupstream: #2", 1},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

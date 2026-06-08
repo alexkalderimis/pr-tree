@@ -64,3 +64,17 @@ func TestBuildForest_BranchTopologyBeatsLink(t *testing.T) {
 		t.Fatalf("#5 should have no children, got %v", numbers(forest[1].Children))
 	}
 }
+
+func TestBuildForest_CycleGuard(t *testing.T) {
+	prs := []PullRequest{
+		{Number: 1, State: StateOpen, BaseRef: "b", HeadRef: "a"},
+		{Number: 2, State: StateOpen, BaseRef: "a", HeadRef: "b"},
+	}
+	forest := BuildForest(prs) // must not infinite-loop
+
+	// With sorted iteration, #1 is processed first: byHead["b"]=#2 exists, so
+	// #1 becomes a child of #2. Then #2's parent would be #1, but that creates
+	// a cycle and is rejected, so #2 is the root.
+	eq(t, numbers(forest), []int{2})
+	eq(t, numbers(forest[0].Children), []int{1})
+}
