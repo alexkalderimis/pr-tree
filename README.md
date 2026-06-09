@@ -46,6 +46,8 @@ Other commands:
 
 By default, `list` colors its output when writing to a terminal — titles are bold, and PR numbers, reviewers, status, and the review marker are colored to make dense forests easier to scan. Color is disabled automatically when output is piped or redirected. To force it off, pass `--no-color` or set the `NO_COLOR` environment variable.
 
+A trailing green `✓` marks a PR that has received the reviews required to merge (GitHub's review decision is *approved*). The `✓` is shown without color when color is disabled.
+
 ## Development
 
 - [DEVELOPMENT.md](DEVELOPMENT.md) — repository structure, build/test/run commands, and architecture.
