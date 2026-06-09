@@ -108,6 +108,11 @@ func nodeLine(pr tree.PullRequest, opts Options) string {
 	if pending && opts.Color {
 		info = underline(info)
 	}
+	// A green check marks a PR with the reviews required to merge. Gated to OPEN:
+	// reviewDecision can remain APPROVED on a merged PR fetched as context.
+	if pr.State == tree.StateOpen && pr.ReviewDecision == tree.ReviewApproved {
+		info += " " + style("✓", opts.Color, ansiGreen)
+	}
 	if pending {
 		info += " " + style("<== Review pending", opts.Color, ansiBold, ansiYellow)
 	}

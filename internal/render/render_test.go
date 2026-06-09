@@ -71,6 +71,55 @@ func TestRender_Colored(t *testing.T) {
 	}
 }
 
+func TestRender_ApprovedCheck_ColorOn(t *testing.T) {
+	forest := []*tree.Node{
+		{PR: tree.PullRequest{Number: 1, Title: "ROOT", State: tree.StateOpen, ReviewDecision: tree.ReviewApproved}},
+	}
+	got := Render(forest, Options{Color: true})
+	want := "\x1b[36m#1\x1b[0m (\x1b[1mROOT\x1b[0m, \x1b[32mOPEN\x1b[0m) \x1b[32m✓\x1b[0m\n"
+	if got != want {
+		t.Fatalf("approved check (color):\n--- got ---\n%q\n--- want ---\n%q", got, want)
+	}
+}
+
+func TestRender_ApprovedCheck_ColorOff(t *testing.T) {
+	forest := []*tree.Node{
+		{PR: tree.PullRequest{Number: 1, Title: "ROOT", State: tree.StateOpen, ReviewDecision: tree.ReviewApproved}},
+	}
+	got := Render(forest, Options{})
+	want := "#1 (ROOT, OPEN) ✓\n"
+	if got != want {
+		t.Fatalf("approved check (plain):\n--- got ---\n%q\n--- want ---\n%q", got, want)
+	}
+}
+
+func TestRender_ApprovedCheck_NotOnMerged(t *testing.T) {
+	// reviewDecision can stay APPROVED on a merged PR (fetched as context);
+	// the "ready to merge" check must not show on it.
+	forest := []*tree.Node{
+		{PR: tree.PullRequest{Number: 2, Title: "OLD", State: tree.StateMerged, ReviewDecision: tree.ReviewApproved}},
+	}
+	got := Render(forest, Options{Color: true})
+	want := "\x1b[36m#2\x1b[0m (\x1b[1mOLD\x1b[0m, \x1b[35mMERGED\x1b[0m)\n"
+	if got != want {
+		t.Fatalf("merged should have no check:\n--- got ---\n%q\n--- want ---\n%q", got, want)
+	}
+}
+
+func TestRender_ApprovedAndReviewPending_Order(t *testing.T) {
+	// Order on the line: underlined info, then green check, then bold-yellow marker.
+	forest := []*tree.Node{
+		{PR: tree.PullRequest{Number: 3, Title: "P", State: tree.StateOpen, ReviewDecision: tree.ReviewApproved}},
+	}
+	got := Render(forest, Options{Color: true, ReviewPending: map[int]bool{3: true}})
+	want := "\x1b[4m\x1b[36m#3\x1b[0m\x1b[4m (\x1b[1mP\x1b[0m\x1b[4m, \x1b[32mOPEN\x1b[0m\x1b[4m)\x1b[0m" +
+		" \x1b[32m✓\x1b[0m" +
+		" \x1b[1;33m<== Review pending\x1b[0m\n"
+	if got != want {
+		t.Fatalf("approved+pending order:\n--- got ---\n%q\n--- want ---\n%q", got, want)
+	}
+}
+
 func TestRender_NoUnderlineWhenColorOff(t *testing.T) {
 	// Underline is color-gated: with Color:false a review-pending line stays
 	// plain (byte-identical to before underline existed).
