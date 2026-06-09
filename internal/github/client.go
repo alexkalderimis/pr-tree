@@ -64,12 +64,13 @@ func (c *Client) do(ctx context.Context, query string, vars map[string]any, out 
 
 // prNode mirrors the GraphQL pull request shape.
 type prNode struct {
-	Number  int    `json:"number"`
-	Title   string `json:"title"`
-	Body    string `json:"body"`
-	IsDraft bool   `json:"isDraft"`
-	State   string `json:"state"`
-	Author  struct {
+	Number         int    `json:"number"`
+	Title          string `json:"title"`
+	Body           string `json:"body"`
+	IsDraft        bool   `json:"isDraft"`
+	State          string `json:"state"`
+	ReviewDecision string `json:"reviewDecision"`
+	Author         struct {
 		Login string `json:"login"`
 	} `json:"author"`
 	BaseRefName    string `json:"baseRefName"`
@@ -102,14 +103,15 @@ func (n prNode) toPR() tree.PullRequest {
 		}
 	}
 	return tree.PullRequest{
-		Number:    n.Number,
-		Title:     n.Title,
-		State:     state,
-		Author:    n.Author.Login,
-		Reviewers: reviewers,
-		BaseRef:   n.BaseRefName,
-		HeadRef:   n.HeadRefName,
-		Body:      n.Body,
+		Number:         n.Number,
+		Title:          n.Title,
+		State:          state,
+		Author:         n.Author.Login,
+		Reviewers:      reviewers,
+		BaseRef:        n.BaseRefName,
+		HeadRef:        n.HeadRefName,
+		Body:           n.Body,
+		ReviewDecision: tree.ReviewDecision(n.ReviewDecision),
 	}
 }
 
@@ -118,7 +120,7 @@ const openPRsQuery = `query($owner:String!,$name:String!,$cursor:String){
     defaultBranchRef{name}
     pullRequests(states:[OPEN],first:100,after:$cursor){
       pageInfo{hasNextPage endCursor}
-      nodes{number title body isDraft state
+      nodes{number title body isDraft state reviewDecision
         author{login} baseRefName headRefName
         reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}}}
     }
@@ -164,7 +166,7 @@ func (c *Client) FetchOpenPRs(ctx context.Context, repo config.Repo) ([]tree.Pul
 
 const prByNumberQuery = `query($owner:String!,$name:String!,$number:Int!){
   repository(owner:$owner,name:$name){
-    pullRequest(number:$number){number title body isDraft state
+    pullRequest(number:$number){number title body isDraft state reviewDecision
       author{login} baseRefName headRefName
       reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}}}
   }

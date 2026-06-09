@@ -15,7 +15,7 @@ import (
 func TestFetchOpenPRs(t *testing.T) {
 	const resp = `{"data":{"repository":{"defaultBranchRef":{"name":"main"},
 	  "pullRequests":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[
-	    {"number":1,"title":"ROOT","body":"","isDraft":false,"state":"OPEN",
+	    {"number":1,"title":"ROOT","body":"","isDraft":false,"state":"OPEN","reviewDecision":"APPROVED",
 	     "author":{"login":"alice"},"baseRefName":"main","headRefName":"a",
 	     "reviewRequests":{"nodes":[{"requestedReviewer":{"login":"bob"}},{"requestedReviewer":{"login":"bob"}},{"requestedReviewer":{}}]}},
 	    {"number":2,"title":"STEM","body":"upstream: #1","isDraft":true,"state":"OPEN",
@@ -49,6 +49,9 @@ func TestFetchOpenPRs(t *testing.T) {
 	}
 	if len(prs[0].Reviewers) != 1 { // duplicate "bob" and empty-login reviewer dropped
 		t.Fatalf("PR0 reviewers not deduped: %+v", prs[0].Reviewers)
+	}
+	if prs[0].ReviewDecision != "APPROVED" {
+		t.Fatalf("PR0 reviewDecision = %q, want APPROVED", prs[0].ReviewDecision)
 	}
 	if prs[1].State != "DRAFT" { // isDraft true -> DRAFT
 		t.Fatalf("PR1 state = %q, want DRAFT", prs[1].State)
