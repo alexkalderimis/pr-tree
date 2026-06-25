@@ -38,12 +38,12 @@ func style(s string, color bool, codes ...string) string {
 	return "\x1b[" + strings.Join(codes, ";") + "m" + s + "\x1b[" + ansiReset + "m"
 }
 
-// underline wraps s so the whole run is underlined. The underline is re-armed
-// after each inner reset so it stays continuous across colored segments and the
-// uncolored glue between them (a single outer wrap would be cancelled by the
-// first segment's reset).
-func underline(s string) string {
-	on := "\x1b[" + ansiUnderline + "m"
+// rearm wraps s in the given SGR codes so the whole run carries them. The codes
+// are re-armed after each inner reset so they stay continuous across colored
+// segments and the uncolored glue between them (a single outer wrap would be
+// cancelled by the first segment's reset).
+func rearm(s string, codes ...string) string {
+	on := "\x1b[" + strings.Join(codes, ";") + "m"
 	reset := "\x1b[" + ansiReset + "m"
 	return on + strings.ReplaceAll(s, reset, reset+on) + reset
 }
@@ -103,14 +103,25 @@ func nodeLine(pr tree.PullRequest, opts Options) string {
 
 	info := num + " (" + strings.Join(parts, ", ") + ")"
 	pending := opts.ReviewPending[pr.Number]
-	// Underline the info portion (not the marker) on review-pending lines. This
-	// is color-gated: with color off, output stays plain.
-	if pending && opts.Color {
-		info = underline(info)
-	}
 	// A green check marks a PR with the reviews required to merge. Gated to OPEN:
 	// reviewDecision can remain APPROVED on a merged PR fetched as context.
-	if pr.State == tree.StateOpen && pr.ReviewDecision == tree.ReviewApproved {
+	approved := pr.State == tree.StateOpen && pr.ReviewDecision == tree.ReviewApproved
+	// Decorate the info portion (not the connector or markers): underline on
+	// review-pending lines, bold on approved lines. Both can apply and are
+	// re-armed together. Color-gated: with color off, output stays plain.
+	if opts.Color {
+		var codes []string
+		if pending {
+			codes = append(codes, ansiUnderline)
+		}
+		if approved {
+			codes = append(codes, ansiBold)
+		}
+		if len(codes) > 0 {
+			info = rearm(info, codes...)
+		}
+	}
+	if approved {
 		info += " " + style("✓", opts.Color, ansiGreen)
 	}
 	if pending {
