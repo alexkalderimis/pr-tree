@@ -89,6 +89,16 @@ func runReplant(ctx context.Context, repoFlag string, args []string, reRequest b
 
 	for _, s := range plan {
 		printStep(out, g, byNum, defaultBranch, s)
+		if reRequest {
+			pr := byNum[s.PR]
+			if len(pr.Approvers) > 0 {
+				logins := make([]string, 0, len(pr.Approvers))
+				for _, a := range pr.Approvers {
+					logins = append(logins, "@"+a.Login)
+				}
+				fmt.Fprintf(out, "      would re-request review: %s\n", strings.Join(logins, ", "))
+			}
+		}
 	}
 
 	fmt.Fprintf(out, "\n(dry-run: no branches were rebased or pushed — execution is not yet implemented)\n")

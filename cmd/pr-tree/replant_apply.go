@@ -135,7 +135,22 @@ func runApply(ctx context.Context, repoFlag string, args []string, yes, reReques
 			return fmt.Errorf("pushing %s: %w", s.HeadRef, err)
 		}
 		fmt.Fprintf(out, "  pushed %s\n", s.HeadRef)
-		// Task 6 inserts the re-request-reviews call here.
+		if reRequest {
+			pr := byNum[s.PR]
+			if len(pr.Approvers) > 0 {
+				ids := make([]string, 0, len(pr.Approvers))
+				logins := make([]string, 0, len(pr.Approvers))
+				for _, a := range pr.Approvers {
+					ids = append(ids, a.ID)
+					logins = append(logins, "@"+a.Login)
+				}
+				if err := client.RequestReviews(ctx, pr.NodeID, ids); err != nil {
+					fmt.Fprintf(out, "    warning: could not re-request reviews on #%d: %v\n", s.PR, err)
+				} else {
+					fmt.Fprintf(out, "    re-requested review: %s\n", strings.Join(logins, ", "))
+				}
+			}
+		}
 	}
 	g.Checkout(startBranch)
 	fmt.Fprintln(out, "\nReplant complete.")
