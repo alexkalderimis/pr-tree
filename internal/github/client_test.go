@@ -15,8 +15,9 @@ import (
 func TestFetchOpenPRs(t *testing.T) {
 	const resp = `{"data":{"repository":{"defaultBranchRef":{"name":"main"},
 	  "pullRequests":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[
-	    {"number":1,"title":"ROOT","body":"","isDraft":false,"state":"OPEN","reviewDecision":"APPROVED",
+	    {"number":1,"id":"PR_kwROOT","title":"ROOT","body":"","isDraft":false,"state":"OPEN","reviewDecision":"APPROVED",
 	     "author":{"login":"alice"},"baseRefName":"main","headRefName":"a","headRefOid":"deadbeef",
+	     "latestReviews":{"nodes":[{"state":"APPROVED","author":{"login":"bob","id":"U_bob"}},{"state":"COMMENTED","author":{"login":"carol","id":"U_carol"}}]},
 	     "reviewRequests":{"nodes":[{"requestedReviewer":{"login":"bob"}},{"requestedReviewer":{"login":"bob"}},{"requestedReviewer":{}}]}},
 	    {"number":2,"title":"STEM","body":"upstream: #1","isDraft":true,"state":"OPEN",
 	     "author":{"login":"bob"},"baseRefName":"a","headRefName":"b","headRefOid":"cafef00d",
@@ -30,6 +31,9 @@ func TestFetchOpenPRs(t *testing.T) {
 		}
 		if !strings.Contains(string(body), "headRefOid") {
 			t.Errorf("query missing headRefOid: %s", body)
+		}
+		if !strings.Contains(string(body), "latestReviews") {
+			t.Errorf("query missing latestReviews: %s", body)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, resp)
@@ -61,6 +65,12 @@ func TestFetchOpenPRs(t *testing.T) {
 	}
 	if prs[1].State != "DRAFT" { // isDraft true -> DRAFT
 		t.Fatalf("PR1 state = %q, want DRAFT", prs[1].State)
+	}
+	if prs[0].NodeID != "PR_kwROOT" {
+		t.Fatalf("PR0 NodeID = %q, want PR_kwROOT", prs[0].NodeID)
+	}
+	if len(prs[0].Approvers) != 1 || prs[0].Approvers[0].Login != "bob" || prs[0].Approvers[0].ID != "U_bob" {
+		t.Fatalf("PR0 approvers wrong: %+v", prs[0].Approvers) // only APPROVED, not COMMENTED
 	}
 }
 

@@ -25,6 +25,12 @@ type ReviewDecision string
 // ReviewApproved means the PR has received the reviews required to merge.
 const ReviewApproved ReviewDecision = "APPROVED"
 
+// Approver is a user whose latest review approved the PR.
+type Approver struct {
+	Login string
+	ID    string // GraphQL node id, for requestReviews
+}
+
 // PullRequest is the domain model used across pr-tree.
 type PullRequest struct {
 	Number         int
@@ -35,8 +41,10 @@ type PullRequest struct {
 	BaseRef        string         // branch this PR merges into
 	HeadRef        string         // this PR's branch
 	HeadOID        string         // commit OID at the head of this PR's branch
+	NodeID         string         // GraphQL node id (for mutations)
 	Body           string         // PR description (parsed for upstream links)
 	ReviewDecision ReviewDecision // GitHub review decision (e.g. APPROVED)
+	Approvers      []Approver     // users whose latest review was APPROVED
 }
 
 // Node is a PR positioned within the forest, with its child PRs.

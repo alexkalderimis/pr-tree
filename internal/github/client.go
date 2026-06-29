@@ -73,9 +73,19 @@ type prNode struct {
 	Author         struct {
 		Login string `json:"login"`
 	} `json:"author"`
-	BaseRefName    string `json:"baseRefName"`
-	HeadRefName    string `json:"headRefName"`
-	HeadRefOid     string `json:"headRefOid"`
+	BaseRefName   string `json:"baseRefName"`
+	HeadRefName   string `json:"headRefName"`
+	HeadRefOid    string `json:"headRefOid"`
+	ID            string `json:"id"`
+	LatestReviews struct {
+		Nodes []struct {
+			State  string `json:"state"`
+			Author struct {
+				Login string `json:"login"`
+				ID    string `json:"id"`
+			} `json:"author"`
+		} `json:"nodes"`
+	} `json:"latestReviews"`
 	ReviewRequests struct {
 		Nodes []struct {
 			RequestedReviewer struct {
@@ -103,6 +113,12 @@ func (n prNode) toPR() tree.PullRequest {
 			reviewers = append(reviewers, login)
 		}
 	}
+	var approvers []tree.Approver
+	for _, rv := range n.LatestReviews.Nodes {
+		if rv.State == "APPROVED" && rv.Author.ID != "" {
+			approvers = append(approvers, tree.Approver{Login: rv.Author.Login, ID: rv.Author.ID})
+		}
+	}
 	return tree.PullRequest{
 		Number:         n.Number,
 		Title:          n.Title,
@@ -112,8 +128,10 @@ func (n prNode) toPR() tree.PullRequest {
 		BaseRef:        n.BaseRefName,
 		HeadRef:        n.HeadRefName,
 		HeadOID:        n.HeadRefOid,
+		NodeID:         n.ID,
 		Body:           n.Body,
 		ReviewDecision: tree.ReviewDecision(n.ReviewDecision),
+		Approvers:      approvers,
 	}
 }
 
@@ -122,8 +140,9 @@ const openPRsQuery = `query($owner:String!,$name:String!,$cursor:String){
     defaultBranchRef{name}
     pullRequests(states:[OPEN],first:100,after:$cursor){
       pageInfo{hasNextPage endCursor}
-      nodes{number title body isDraft state reviewDecision
+      nodes{number id title body isDraft state reviewDecision
         author{login} baseRefName headRefName headRefOid
+        latestReviews(first:50){nodes{state author{login ... on User{id}}}}
         reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}}}
     }
   }
@@ -168,8 +187,9 @@ func (c *Client) FetchOpenPRs(ctx context.Context, repo config.Repo) ([]tree.Pul
 
 const prByNumberQuery = `query($owner:String!,$name:String!,$number:Int!){
   repository(owner:$owner,name:$name){
-    pullRequest(number:$number){number title body isDraft state reviewDecision
+    pullRequest(number:$number){number id title body isDraft state reviewDecision
       author{login} baseRefName headRefName headRefOid
+      latestReviews(first:50){nodes{state author{login ... on User{id}}}}
       reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}}}
   }
 }`
