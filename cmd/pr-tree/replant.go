@@ -17,23 +17,29 @@ import (
 )
 
 func newReplantCmd() *cobra.Command {
+	var apply, yes, reRequest bool
 	cmd := &cobra.Command{
 		Use:   "replant [#PR]",
-		Short: "Show how a PR's descendants would be rebased (dry-run)",
-		Long: "Plan the rebase of every descendant of a PR after the PR merged " +
-			"(squash) or changed. The target defaults to the PR for the current " +
-			"branch. This is currently dry-run only: it prints the plan and the " +
-			"commits each descendant would drop and keep, but performs no rebase " +
-			"or force-push.",
+		Short: "Rebase a PR's descendants (dry-run unless --apply)",
+		Long: "Plan or perform the rebase of every descendant of a PR after the " +
+			"PR merged (squash) or changed. The target defaults to the PR for the " +
+			"current branch. Without --apply it only prints the plan; with --apply " +
+			"it rebases each descendant and force-pushes them.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runReplant(cmd.Context(), repoFlag, args, cmd.OutOrStdout())
+			if apply {
+				return runApply(cmd.Context(), repoFlag, args, yes, reRequest, cmd.InOrStdin(), cmd.OutOrStdout())
+			}
+			return runReplant(cmd.Context(), repoFlag, args, reRequest, cmd.OutOrStdout())
 		},
 	}
+	cmd.Flags().BoolVar(&apply, "apply", false, "Rebase and force-push (default: dry-run)")
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip the pre-push confirmation prompt")
+	cmd.Flags().BoolVar(&reRequest, "re-request-reviews", false, "Re-request review from approvers after force-push")
 	return cmd
 }
 
-func runReplant(ctx context.Context, repoFlag string, args []string, out io.Writer) error {
+func runReplant(ctx context.Context, repoFlag string, args []string, reRequest bool, out io.Writer) error {
 	repo, err := config.Resolve(repoFlag)
 	if err != nil {
 		return err
