@@ -40,7 +40,7 @@ Other commands:
 - `replant` - rebase all descendants (infers the current PR from the current branch, accepts `[#PR_ID]` argument)
 - `annotate` - update the PR descriptions of all PRs in the tree with a `links:` section including `upstream` and `downstream` links, so that the stack is navigable within GitHub
 
-`replant` is **dry-run only** today: it prints, for each descendant, which commits would be dropped and which kept, but performs no rebase or force-push.
+`replant` is **dry-run by default**: it prints, for each descendant, which commits would be dropped and which kept, but performs no rebase or force-push unless you pass `--apply`.
 
 ```sh
 > pr-tree replant 1234   # or, on the branch itself: pr-tree replant
@@ -51,12 +51,46 @@ Replant plan for #1234 (ROOT) — merged — moving children onto main:
       drop 3 commits  a1f2c3d..c4d5e6f  (merged via #1234)
       keep 2 commits  b1f9e0a add parser
 
-(dry-run: no branches were rebased or pushed — execution is not yet implemented)
+(dry-run: no branches were rebased or pushed — pass --apply to execute)
 ```
+
+Pass `--apply` to actually run the rebases and force-push. `replant` rebases every descendant top-down, then — only if all rebases succeed — asks for confirmation before pushing:
+
+```sh
+> pr-tree replant --apply 1234
+
+Replant plan for #1234 (ROOT) — merged — moving children onto main:
+
+  #1235 (STEM) → rebase onto main (was feature-a)
+      drop 3 commits  a1f2c3d..c4d5e6f  (merged via #1234)
+      keep 2 commits  b1f9e0a add parser
+
+  #1236 (LEAF) → rebase onto feature-b (was feature-a → feature-b chain)
+      drop 2 commits  c4d5e6f..d7e8f9a  (merged via #1235)
+      keep 1 commit   e1f2a3b fix typo
+
+Rebased 2 branch(es) successfully.
+Force-push 2 branch(es)? [y/N] y
+  pushed feature-b (feature-a → main)
+  pushed feature-c (feature-b → feature-b)
+  re-requested review: @alice
+```
+
+Flags:
+
+- `--apply` — perform the rebases and force-push (omit for dry-run).
+- `-y` / `--yes` — skip the `Force-push N branch(es)? [y/N]` confirmation prompt.
+- `--re-request-reviews` — after a successful force-push, re-request review from
+  each pushed PR's approvers whose approval was staled by the push. In dry-run
+  mode it lists who would be re-requested. Re-request failures are non-fatal.
+
+If a rebase hits a conflict, `replant --apply` pauses with the rebase in
+progress and prints guidance for resolving and resuming. Re-running after
+resolving skips branches that were already successfully replanted.
 
 After a squash-merge, the redundant parent commits are identified **structurally** — `replant` rebases each child with `git rebase --onto <new-base> <fork-point> <child>`, where the fork point is `git merge-base` of the parent's recorded head (GitHub's `headRefOid`) and the child's head. This drops exactly the merged commits regardless of squashing, where patch-id detection (`git cherry`) would not.
 
-> **Note:** `list` is implemented today; `replant` is dry-run only; `annotate` is planned. See [ROADMAP.md](ROADMAP.md).
+> **Note:** `list` and `replant` (dry-run and `--apply`) are implemented; `annotate` is planned. See [ROADMAP.md](ROADMAP.md).
 
 ### Color
 
