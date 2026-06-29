@@ -101,7 +101,7 @@ func runReplant(ctx context.Context, repoFlag string, args []string, reRequest b
 		}
 	}
 
-	fmt.Fprintf(out, "\n(dry-run: no branches were rebased or pushed — execution is not yet implemented)\n")
+	fmt.Fprintf(out, "\n(dry-run: no branches were rebased or pushed — pass --apply to execute)\n")
 	return nil
 }
 
