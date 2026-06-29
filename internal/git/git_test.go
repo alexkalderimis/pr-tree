@@ -235,6 +235,70 @@ func TestPrepareBranch(t *testing.T) {
 	}
 }
 
+func TestRebaseDropsMergedCommits(t *testing.T) {
+	dir := initRepo(t)
+	g := New(dir)
+	aTip, _ := g.RevParse("a")
+	run(t, dir, "checkout", "-q", "main")
+	run(t, dir, "merge", "--squash", "a")
+	run(t, dir, "commit", "-qm", "squash a")
+	fork, _ := g.MergeBase(aTip, "b")
+
+	if err := g.Rebase("main", fork, "b"); err != nil {
+		t.Fatalf("Rebase: %v", err)
+	}
+	commits, _ := g.RevList("main..b")
+	if len(commits) != 1 || commits[0].Subject != "b1" {
+		t.Fatalf("after replant main..b = %+v, want just b1", commits)
+	}
+	inProg, _ := g.RebaseInProgress()
+	if inProg {
+		t.Fatal("no rebase should be in progress after success")
+	}
+}
+
+func TestRebaseConflictReported(t *testing.T) {
+	// main and branch x both change the same line -> conflict on rebase.
+	dir := t.TempDir()
+	run(t, dir, "init", "-q", "-b", "main")
+	run(t, dir, "config", "user.email", "t@e.com")
+	run(t, dir, "config", "user.name", "T")
+	commit(t, dir, "f", "base", "base")
+	run(t, dir, "checkout", "-q", "-b", "x")
+	commit(t, dir, "f", "from-x", "x1")
+	run(t, dir, "checkout", "-q", "main")
+	commit(t, dir, "f", "from-main", "m1")
+
+	g := New(dir)
+	base, _ := g.RevParse("main~1") // the shared "base" commit
+	err := g.Rebase("main", base, "x")
+	if err != ErrRebaseConflict {
+		t.Fatalf("Rebase err = %v, want ErrRebaseConflict", err)
+	}
+	inProg, _ := g.RebaseInProgress()
+	if !inProg {
+		t.Fatal("a rebase should be in progress after a conflict")
+	}
+	run(t, dir, "rebase", "--abort") // clean up
+}
+
+func TestPushForceWithLease(t *testing.T) {
+	// A bare remote; clone, rewrite history, force-push with lease.
+	bare := t.TempDir()
+	run(t, bare, "init", "-q", "--bare", "-b", "main")
+	src := initRepo(t)
+	run(t, src, "remote", "add", "origin", bare)
+	run(t, src, "push", "-q", "origin", "b")
+
+	g := New(src)
+	run(t, src, "checkout", "-q", "b")
+	// Amend the tip commit so local b diverges from origin/b (true force-push).
+	run(t, src, "commit", "--amend", "-m", "b1-amended")
+	if err := g.PushForceWithLease("origin", "b"); err != nil {
+		t.Fatalf("PushForceWithLease: %v", err)
+	}
+}
+
 func TestFetchOID(t *testing.T) {
 	// A second repo acts as a remote; fetch one of its ref-tip OIDs by SHA.
 	remote := initRepo(t)

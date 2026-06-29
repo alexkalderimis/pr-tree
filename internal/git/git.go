@@ -4,8 +4,11 @@
 package git
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -195,5 +198,48 @@ func (g *Git) Checkout(ref string) error {
 // ResetHard moves the current branch and worktree to oid.
 func (g *Git) ResetHard(oid string) error {
 	_, err := g.run("reset", "--hard", "--quiet", oid)
+	return err
+}
+
+// ErrRebaseConflict signals that a rebase stopped on a conflict and is left in
+// progress for the user to resolve.
+var ErrRebaseConflict = errors.New("rebase stopped on a conflict")
+
+// Rebase replays forkOID..branch onto ontoOID (git rebase --onto), dropping the
+// commits at or below the fork point. core.commentChar is forced to '#' so a
+// global rebase.updateRefs=true cannot break the generated todo. On a conflict
+// it returns ErrRebaseConflict, leaving the rebase in progress.
+func (g *Git) Rebase(ontoOID, forkOID, branch string) error {
+	_, err := g.run("-c", "core.commentChar=#", "rebase", "--onto", ontoOID, forkOID, branch)
+	if err != nil {
+		if inProg, ipErr := g.RebaseInProgress(); ipErr == nil && inProg {
+			return ErrRebaseConflict
+		}
+		return err
+	}
+	return nil
+}
+
+// RebaseInProgress reports whether a rebase is currently underway.
+func (g *Git) RebaseInProgress() (bool, error) {
+	for _, name := range []string{"rebase-merge", "rebase-apply"} {
+		path, err := g.run("rev-parse", "--git-path", name)
+		if err != nil {
+			return false, err
+		}
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(g.dir, path)
+		}
+		if _, err := os.Stat(path); err == nil {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// PushForceWithLease force-pushes branch to remote, refusing if the remote has
+// moved since we last saw it (someone else pushed).
+func (g *Git) PushForceWithLease(remote, branch string) error {
+	_, err := g.run("push", "--force-with-lease", remote, branch)
 	return err
 }
