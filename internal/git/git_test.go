@@ -145,6 +145,96 @@ func TestWorktreeClean(t *testing.T) {
 	}
 }
 
+func TestIsAncestor(t *testing.T) {
+	dir := initRepo(t)
+	g := New(dir)
+	aTip, _ := g.RevParse("a")
+	yes, err := g.IsAncestor(aTip, "b")
+	if err != nil || !yes {
+		t.Fatalf("a should be ancestor of b: %v %v", yes, err)
+	}
+	no, err := g.IsAncestor("b", "a")
+	if err != nil || no {
+		t.Fatalf("b should NOT be ancestor of a: %v %v", no, err)
+	}
+}
+
+func TestAlreadyReplanted(t *testing.T) {
+	// Simulate a squash-merge of a into main, then replant b onto main.
+	dir := initRepo(t)
+	g := New(dir)
+	aTip, _ := g.RevParse("a")
+	run(t, dir, "checkout", "-q", "main")
+	run(t, dir, "merge", "--squash", "a")
+	run(t, dir, "commit", "-qm", "squash a")
+
+	// Before replant: b still contains a's commits -> NOT replanted onto main.
+	mainTip, _ := g.RevParse("main")
+	done, err := g.AlreadyReplanted(mainTip, aTip, "b")
+	if err != nil {
+		t.Fatalf("AlreadyReplanted: %v", err)
+	}
+	if done {
+		t.Fatal("b is not yet replanted; want false")
+	}
+
+	// Replant b onto main, dropping a's commits.
+	fork, _ := g.MergeBase(aTip, "b")
+	run(t, dir, "-c", "core.commentChar=#", "rebase", "--onto", "main", fork, "b")
+	mainTip, _ = g.RevParse("main")
+	done, err = g.AlreadyReplanted(mainTip, aTip, "b")
+	if err != nil {
+		t.Fatalf("AlreadyReplanted: %v", err)
+	}
+	if !done {
+		t.Fatal("b is now replanted onto main; want true")
+	}
+}
+
+func TestLocalBranchOID(t *testing.T) {
+	dir := initRepo(t)
+	g := New(dir)
+	oid, exists, err := g.LocalBranchOID("a")
+	if err != nil || !exists || len(oid) < 7 {
+		t.Fatalf("branch a: oid=%q exists=%v err=%v", oid, exists, err)
+	}
+	_, exists, err = g.LocalBranchOID("does-not-exist")
+	if err != nil || exists {
+		t.Fatalf("missing branch: exists=%v err=%v", exists, err)
+	}
+}
+
+func TestPrepareBranch(t *testing.T) {
+	dir := initRepo(t)
+	g := New(dir)
+
+	// Missing branch is created at headOID.
+	bTip, _ := g.RevParse("b")
+	if err := g.PrepareBranch("newbranch", bTip); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	oid, exists, _ := g.LocalBranchOID("newbranch")
+	if !exists || oid != bTip {
+		t.Fatalf("newbranch = %q, want %s", oid, bTip)
+	}
+
+	// Branch ahead of headOID (local unpushed commits) is refused.
+	aTip, _ := g.RevParse("a")
+	if err := g.PrepareBranch("b", aTip); err == nil {
+		t.Fatal("expected refusal: b is ahead of a")
+	}
+
+	// Branch behind headOID is fast-forwarded to it.
+	run(t, dir, "branch", "-f", "behind", "a")
+	if err := g.PrepareBranch("behind", bTip); err != nil {
+		t.Fatalf("ff: %v", err)
+	}
+	oid, _, _ = g.LocalBranchOID("behind")
+	if oid != bTip {
+		t.Fatalf("behind = %q, want %s after ff", oid, bTip)
+	}
+}
+
 func TestFetchOID(t *testing.T) {
 	// A second repo acts as a remote; fetch one of its ref-tip OIDs by SHA.
 	remote := initRepo(t)

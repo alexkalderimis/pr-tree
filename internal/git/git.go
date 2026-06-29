@@ -98,3 +98,102 @@ func (g *Git) WorktreeClean() (bool, error) {
 	}
 	return out == "", nil
 }
+
+// Fetch updates remote-tracking refs from remote.
+func (g *Git) Fetch(remote string) error {
+	_, err := g.run("fetch", "--quiet", remote)
+	return err
+}
+
+// IsAncestor reports whether ancestor is an ancestor of (or equal to) descendant.
+func (g *Git) IsAncestor(ancestor, descendant string) (bool, error) {
+	cmd := exec.Command("git", "merge-base", "--is-ancestor", ancestor, descendant)
+	cmd.Dir = g.dir
+	err := cmd.Run()
+	if err == nil {
+		return true, nil
+	}
+	if ee, ok := err.(*exec.ExitError); ok && ee.ExitCode() == 1 {
+		return false, nil
+	}
+	return false, fmt.Errorf("git merge-base --is-ancestor %s %s: %w", ancestor, descendant, err)
+}
+
+// AlreadyReplanted reports whether branch already sits on newBaseOID with the
+// old parent commits (oldParentOID) shed — i.e. the replant for it is done.
+func (g *Git) AlreadyReplanted(newBaseOID, oldParentOID, branch string) (bool, error) {
+	onNewBase, err := g.IsAncestor(newBaseOID, branch)
+	if err != nil || !onNewBase {
+		return false, err
+	}
+	hasOld, err := g.IsAncestor(oldParentOID, branch)
+	if err != nil {
+		return false, err
+	}
+	return !hasOld, nil
+}
+
+// LocalBranchOID returns the OID of a local branch, and whether it exists.
+func (g *Git) LocalBranchOID(branch string) (string, bool, error) {
+	ref := "refs/heads/" + branch
+	check := exec.Command("git", "show-ref", "--verify", "--quiet", ref)
+	check.Dir = g.dir
+	if err := check.Run(); err != nil {
+		if ee, ok := err.(*exec.ExitError); ok && ee.ExitCode() == 1 {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("git show-ref %s: %w", ref, err)
+	}
+	oid, err := g.run("rev-parse", ref)
+	if err != nil {
+		return "", false, err
+	}
+	return oid, true, nil
+}
+
+// PrepareBranch ensures the local branch exists and points at headOID, ready to
+// rebase. It refuses to touch a branch that has commits not contained in
+// headOID (unpushed local work or a divergence) to avoid destroying work.
+func (g *Git) PrepareBranch(branch, headOID string) error {
+	oid, exists, err := g.LocalBranchOID(branch)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		_, err := g.run("branch", branch, headOID)
+		return err
+	}
+	if oid == headOID {
+		return nil
+	}
+	ahead, err := g.IsAncestor(headOID, branch) // headOID contained in branch => branch ahead
+	if err != nil {
+		return err
+	}
+	if ahead {
+		return fmt.Errorf("branch %q has local commits not on origin; push or reset it before replanting", branch)
+	}
+	behind, err := g.IsAncestor(branch, headOID) // branch contained in headOID => safe to fast-forward
+	if err != nil {
+		return err
+	}
+	if !behind {
+		return fmt.Errorf("branch %q has diverged from origin; reconcile it before replanting", branch)
+	}
+	if err := g.Checkout(branch); err != nil {
+		return err
+	}
+	return g.ResetHard(headOID)
+}
+
+// Checkout switches to a ref (branch or OID).
+func (g *Git) Checkout(ref string) error {
+	_, err := g.run("checkout", "--quiet", ref)
+	return err
+}
+
+// ResetHard moves the current branch and worktree to oid.
+func (g *Git) ResetHard(oid string) error {
+	_, err := g.run("reset", "--hard", "--quiet", oid)
+	return err
+}
