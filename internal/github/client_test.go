@@ -16,10 +16,10 @@ func TestFetchOpenPRs(t *testing.T) {
 	const resp = `{"data":{"repository":{"defaultBranchRef":{"name":"main"},
 	  "pullRequests":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[
 	    {"number":1,"title":"ROOT","body":"","isDraft":false,"state":"OPEN","reviewDecision":"APPROVED",
-	     "author":{"login":"alice"},"baseRefName":"main","headRefName":"a",
+	     "author":{"login":"alice"},"baseRefName":"main","headRefName":"a","headRefOid":"deadbeef",
 	     "reviewRequests":{"nodes":[{"requestedReviewer":{"login":"bob"}},{"requestedReviewer":{"login":"bob"}},{"requestedReviewer":{}}]}},
 	    {"number":2,"title":"STEM","body":"upstream: #1","isDraft":true,"state":"OPEN",
-	     "author":{"login":"bob"},"baseRefName":"a","headRefName":"b",
+	     "author":{"login":"bob"},"baseRefName":"a","headRefName":"b","headRefOid":"cafef00d",
 	     "reviewRequests":{"nodes":[]}}
 	  ]}}}}`
 
@@ -27,6 +27,9 @@ func TestFetchOpenPRs(t *testing.T) {
 		body, _ := io.ReadAll(r.Body)
 		if !strings.Contains(string(body), "pullRequests") {
 			t.Errorf("query missing pullRequests: %s", body)
+		}
+		if !strings.Contains(string(body), "headRefOid") {
+			t.Errorf("query missing headRefOid: %s", body)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, resp)
@@ -52,6 +55,9 @@ func TestFetchOpenPRs(t *testing.T) {
 	}
 	if prs[0].ReviewDecision != "APPROVED" {
 		t.Fatalf("PR0 reviewDecision = %q, want APPROVED", prs[0].ReviewDecision)
+	}
+	if prs[0].HeadOID != "deadbeef" {
+		t.Fatalf("PR0 HeadOID = %q, want deadbeef", prs[0].HeadOID)
 	}
 	if prs[1].State != "DRAFT" { // isDraft true -> DRAFT
 		t.Fatalf("PR1 state = %q, want DRAFT", prs[1].State)

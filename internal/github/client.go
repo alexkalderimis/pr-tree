@@ -75,6 +75,7 @@ type prNode struct {
 	} `json:"author"`
 	BaseRefName    string `json:"baseRefName"`
 	HeadRefName    string `json:"headRefName"`
+	HeadRefOid     string `json:"headRefOid"`
 	ReviewRequests struct {
 		Nodes []struct {
 			RequestedReviewer struct {
@@ -110,6 +111,7 @@ func (n prNode) toPR() tree.PullRequest {
 		Reviewers:      reviewers,
 		BaseRef:        n.BaseRefName,
 		HeadRef:        n.HeadRefName,
+		HeadOID:        n.HeadRefOid,
 		Body:           n.Body,
 		ReviewDecision: tree.ReviewDecision(n.ReviewDecision),
 	}
@@ -121,7 +123,7 @@ const openPRsQuery = `query($owner:String!,$name:String!,$cursor:String){
     pullRequests(states:[OPEN],first:100,after:$cursor){
       pageInfo{hasNextPage endCursor}
       nodes{number title body isDraft state reviewDecision
-        author{login} baseRefName headRefName
+        author{login} baseRefName headRefName headRefOid
         reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}}}
     }
   }
@@ -167,7 +169,7 @@ func (c *Client) FetchOpenPRs(ctx context.Context, repo config.Repo) ([]tree.Pul
 const prByNumberQuery = `query($owner:String!,$name:String!,$number:Int!){
   repository(owner:$owner,name:$name){
     pullRequest(number:$number){number title body isDraft state reviewDecision
-      author{login} baseRefName headRefName
+      author{login} baseRefName headRefName headRefOid
       reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}}}
   }
 }`

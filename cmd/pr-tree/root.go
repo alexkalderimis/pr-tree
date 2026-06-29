@@ -12,5 +12,6 @@ func newRootCmd() *cobra.Command {
 	}
 	root.PersistentFlags().StringVar(&repoFlag, "repo", "", "Target repo as owner/name (defaults to the current git origin)")
 	root.AddCommand(newListCmd())
+	root.AddCommand(newReplantCmd())
 	return root
 }

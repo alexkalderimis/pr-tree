@@ -51,10 +51,12 @@ unit-testable without network or git.
 
 | Path | Responsibility | I/O? |
 |---|---|---|
-| `cmd/pr-tree/` | CLI entry point and cobra wiring (`main`, `root`, `list`) | yes (glue) |
+| `cmd/pr-tree/` | CLI entry point and cobra wiring (`main`, `root`, `list`, `replant`) | yes (glue) |
 | `internal/config/` | Resolve the target repo from `--repo` or the git `origin` remote | git |
 | `internal/github/` | Token discovery and the GitHub GraphQL client (`FetchOpenPRs`, `FetchPRsByNumber`, `Viewer`) | network |
+| `internal/git/` | Local `git` command wrappers used by `replant` (`MergeBase`, `RevList`, `CurrentBranch`, …) | git |
 | `internal/tree/` | Domain model + forest building (branch topology with `upstream:` link fallback), filtering, selection | none (pure) |
+| `internal/replant/` | Pure rebase planning: descendant order and new-base selection for `replant` | none (pure) |
 | `internal/render/` | Render a forest to the textual tree output | none (pure) |
 | `docs/superpowers/` | Design spec and implementation plans | — |
 
@@ -80,7 +82,9 @@ Each `*.go` file has a focused `*_test.go` beside it.
 - **I/O packages are tested without real I/O:** `github` uses `httptest`
   servers and decodes canned GraphQL responses; `config` and the token logic
   use injected helpers (e.g. a `getenv func(string) string`) rather than
-  touching the real environment.
+  touching the real environment. The one exception is `internal/git`, which
+  wraps the `git` binary and can only be tested honestly by running it — its
+  tests build throwaway repositories in `t.TempDir()`.
 - Tests assert real behavior (exact rendered strings, forest shape), not mocks
   echoing themselves.
 

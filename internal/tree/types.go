@@ -34,6 +34,7 @@ type PullRequest struct {
 	Reviewers      []string       // requested reviewer logins
 	BaseRef        string         // branch this PR merges into
 	HeadRef        string         // this PR's branch
+	HeadOID        string         // commit OID at the head of this PR's branch
 	Body           string         // PR description (parsed for upstream links)
 	ReviewDecision ReviewDecision // GitHub review decision (e.g. APPROVED)
 }
