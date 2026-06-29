@@ -59,21 +59,15 @@ Pass `--apply` to actually run the rebases and force-push. `replant` rebases eve
 ```sh
 > pr-tree replant --apply 1234
 
-Replant plan for #1234 (ROOT) — merged — moving children onto main:
+  #1235 (STEM) → rebased onto main
+  #1236 (LEAF) → rebased onto feature-b
 
-  #1235 (STEM) → rebase onto main (was feature-a)
-      drop 3 commits  a1f2c3d..c4d5e6f  (merged via #1234)
-      keep 2 commits  b1f9e0a add parser
+Force-push 2 branch(es) to origin? [y/N] y
+  pushed feature-b
+  pushed feature-c
+    re-requested review: @alice
 
-  #1236 (LEAF) → rebase onto feature-b (was feature-a → feature-b chain)
-      drop 2 commits  c4d5e6f..d7e8f9a  (merged via #1235)
-      keep 1 commit   e1f2a3b fix typo
-
-Rebased 2 branch(es) successfully.
-Force-push 2 branch(es)? [y/N] y
-  pushed feature-b (feature-a → main)
-  pushed feature-c (feature-b → feature-b)
-  re-requested review: @alice
+Replant complete.
 ```
 
 Flags:
