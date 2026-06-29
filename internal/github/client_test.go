@@ -101,6 +101,28 @@ func TestDo_GraphQLError(t *testing.T) {
 	}
 }
 
+func TestRequestReviews(t *testing.T) {
+	var gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		io.WriteString(w, `{"data":{"requestReviews":{"clientMutationId":null}}}`)
+	}))
+	defer srv.Close()
+
+	c := &Client{token: "t", endpoint: srv.URL, httpClient: srv.Client()}
+	err := c.RequestReviews(context.Background(), "PR_node", []string{"U_bob", "U_foo"})
+	if err != nil {
+		t.Fatalf("RequestReviews: %v", err)
+	}
+	if !strings.Contains(gotBody, "requestReviews") {
+		t.Errorf("body missing requestReviews mutation: %s", gotBody)
+	}
+	if !strings.Contains(gotBody, "PR_node") || !strings.Contains(gotBody, "U_bob") {
+		t.Errorf("body missing variables: %s", gotBody)
+	}
+}
+
 func TestFetchPRsByNumber(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)

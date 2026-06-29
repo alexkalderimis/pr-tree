@@ -215,6 +215,22 @@ func (c *Client) FetchPRsByNumber(ctx context.Context, repo config.Repo, numbers
 	return prs, nil
 }
 
+const requestReviewsMutation = `mutation($pr:ID!,$users:[ID!]!){
+  requestReviews(input:{pullRequestId:$pr,userIds:$users,union:true}){clientMutationId}
+}`
+
+// RequestReviews re-requests review from the given user node ids on a PR. With
+// union:true it adds to, rather than replaces, the existing requested set.
+func (c *Client) RequestReviews(ctx context.Context, prNodeID string, userIDs []string) error {
+	var out struct {
+		RequestReviews struct {
+			ClientMutationID *string `json:"clientMutationId"`
+		} `json:"requestReviews"`
+	}
+	vars := map[string]any{"pr": prNodeID, "users": userIDs}
+	return c.do(ctx, requestReviewsMutation, vars, &out)
+}
+
 const viewerQuery = `query{viewer{login}}`
 
 // Viewer returns the authenticated user's login.
