@@ -95,6 +95,24 @@ func TestBuildForest_DefaultBranchBaseIsRootDespiteLink(t *testing.T) {
 	}
 }
 
+func TestBuildForest_HumanUpstreamLinksMergedParent(t *testing.T) {
+	// Mirrors PR #5925: a squash-merge of the parent retargeted the child's base
+	// to the default branch ("master"), so branch topology is gone. The child's
+	// body carries only a human-written "Upstream:" heading (not the machine
+	// `upstream: #N` form). With the broadened parser, the child must link to its
+	// merged parent so it can be replanted onto the default branch.
+	prs := []PullRequest{
+		{Number: 5924, State: StateMerged, BaseRef: "master", HeadRef: "pr3"},
+		{Number: 5925, State: StateOpen, BaseRef: "master", HeadRef: "pr4",
+			Body: "**Upstream (merge first):** #5924 → #5923 → #5922"},
+	}
+	forest := BuildForest(prs, "master")
+
+	// #5924 (merged) is the sole root; #5925 hangs beneath it.
+	eq(t, numbers(forest), []int{5924})
+	eq(t, numbers(forest[0].Children), []int{5925})
+}
+
 func TestBuildForest_UnannotatedMergedParentAbsent(t *testing.T) {
 	// #1 merged, branch "a" deleted, and (crucially) NOT in the input set at all
 	// because it was never annotated so we never knew to fetch it. #2 was
