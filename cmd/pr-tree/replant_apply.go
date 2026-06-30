@@ -79,7 +79,7 @@ func runApply(ctx context.Context, repoFlag string, args []string, yes, reReques
 		_ = g.FetchOID("origin", parent.HeadOID)
 		_ = g.FetchOID("origin", child.HeadOID)
 
-		newBaseOID, err := resolveNewBase(g, defaultBranch, s)
+		newBaseOID, err := resolveNewBase(g, defaultBranch, s, parent.HeadOID)
 		if err != nil {
 			g.Checkout(startBranch)
 			return err
@@ -157,14 +157,24 @@ func runApply(ctx context.Context, repoFlag string, args []string, yes, reReques
 	return nil
 }
 
-// resolveNewBase turns a Step's NewBaseRef into a concrete OID. A merged parent
-// means the default branch on origin; otherwise it is the parent's local head,
-// which was rebased earlier in this run.
-func resolveNewBase(g *git.Git, defaultBranch string, s replant.Step) (string, error) {
+// baseRef returns the git ref (or OID) whose commit a step rebases onto.
+// A merged parent → the default branch on origin. The target's own step rebases
+// onto its parent's origin head (the parent is above the target and was not
+// rebased in this run). A descendant rebases onto its parent's local branch,
+// which an earlier step in this run already rebased.
+func baseRef(defaultBranch string, s replant.Step, parentHeadOID string) string {
 	if s.ParentMerged {
-		return g.RevParse("origin/" + defaultBranch)
+		return "origin/" + defaultBranch
 	}
-	return g.RevParse(s.NewBaseRef)
+	if s.TargetSelf {
+		return parentHeadOID
+	}
+	return s.NewBaseRef
+}
+
+// resolveNewBase turns a Step's intended base into a concrete OID.
+func resolveNewBase(g *git.Git, defaultBranch string, s replant.Step, parentHeadOID string) (string, error) {
+	return g.RevParse(baseRef(defaultBranch, s, parentHeadOID))
 }
 
 // confirmed reads a line and reports whether it is an affirmative y/yes.
