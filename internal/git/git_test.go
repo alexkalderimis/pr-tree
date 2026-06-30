@@ -233,6 +233,19 @@ func TestPrepareBranch(t *testing.T) {
 	if oid != bTip {
 		t.Fatalf("behind = %q, want %s after ff", oid, bTip)
 	}
+
+	// Diverged branch (its own commit off main, neither ancestor of headOID)
+	// is refused and left untouched — the unpushed work must not be destroyed.
+	run(t, dir, "checkout", "-q", "-b", "diverged", "main")
+	commit(t, dir, "h", "d1", "d1")
+	divergedTip, _, _ := g.LocalBranchOID("diverged")
+	if err := g.PrepareBranch("diverged", bTip); err == nil {
+		t.Fatal("expected refusal: diverged shares no ancestry line with b")
+	}
+	oid, _, _ = g.LocalBranchOID("diverged")
+	if oid != divergedTip {
+		t.Fatalf("diverged branch was modified: %q, want unchanged %s", oid, divergedTip)
+	}
 }
 
 func TestRebaseDropsMergedCommits(t *testing.T) {
