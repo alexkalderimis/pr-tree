@@ -15,7 +15,7 @@ import (
 	"github.com/alexkalderimis/pr-tree/internal/tree"
 )
 
-func runApply(ctx context.Context, repoFlag string, args []string, yes, reRequest bool, in io.Reader, out io.Writer) error {
+func runApply(ctx context.Context, repoFlag string, args []string, yes, reRequest bool, parent int, in io.Reader, out io.Writer) error {
 	repo, err := config.Resolve(repoFlag)
 	if err != nil {
 		return err
@@ -29,12 +29,6 @@ func runApply(ctx context.Context, repoFlag string, args []string, yes, reReques
 	prs, defaultBranch, err := client.FetchOpenPRs(ctx, repo)
 	if err != nil {
 		return fmt.Errorf("fetching PRs for %s: %w", repo, err)
-	}
-	prs = append(prs, fetchMissingParents(ctx, client, repo, prs)...)
-
-	byNum := make(map[int]tree.PullRequest, len(prs))
-	for _, pr := range prs {
-		byNum[pr.Number] = pr
 	}
 
 	g := git.New("")
@@ -53,13 +47,25 @@ func runApply(ctx context.Context, repoFlag string, args []string, yes, reReques
 	if err != nil {
 		return err
 	}
+	// An explicit --parent override must be applied before resolving missing
+	// parents, so the injected upstream link is the one fetched and linked.
+	if parent != 0 {
+		injectParentOverride(prs, target, parent)
+	}
+	prs = append(prs, fetchMissingParents(ctx, client, repo, prs)...)
+
+	byNum := make(map[int]tree.PullRequest, len(prs))
+	for _, pr := range prs {
+		byNum[pr.Number] = pr
+	}
+
 	forest := tree.BuildForest(prs, defaultBranch)
 	plan, err := replant.Plan(forest, target, defaultBranch)
 	if err != nil {
 		return err
 	}
 	if len(plan) == 0 {
-		fmt.Fprintln(out, "Nothing to replant: the target has no descendants.")
+		fmt.Fprintln(out, "Nothing to replant: the target has no parent to move onto and no descendants.")
 		return nil
 	}
 

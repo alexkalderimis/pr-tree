@@ -18,6 +18,7 @@ import (
 
 func newReplantCmd() *cobra.Command {
 	var apply, yes, reRequest bool
+	var parent int
 	cmd := &cobra.Command{
 		Use:   "replant [#PR]",
 		Short: "Rebase a PR's descendants (dry-run unless --apply)",
@@ -28,18 +29,34 @@ func newReplantCmd() *cobra.Command {
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if apply {
-				return runApply(cmd.Context(), repoFlag, args, yes, reRequest, cmd.InOrStdin(), cmd.OutOrStdout())
+				return runApply(cmd.Context(), repoFlag, args, yes, reRequest, parent, cmd.InOrStdin(), cmd.OutOrStdout())
 			}
-			return runReplant(cmd.Context(), repoFlag, args, reRequest, cmd.OutOrStdout())
+			return runReplant(cmd.Context(), repoFlag, args, reRequest, parent, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().BoolVar(&apply, "apply", false, "Rebase and force-push (default: dry-run)")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip the pre-push confirmation prompt")
 	cmd.Flags().BoolVar(&reRequest, "re-request-reviews", false, "Re-request review from approvers after force-push")
+	cmd.Flags().IntVar(&parent, "parent", 0, "Override the target's upstream parent PR (bare number, no #) when its lineage can't be inferred — e.g. a squash-merged parent that caused GitHub to retarget the base")
 	return cmd
 }
 
-func runReplant(ctx context.Context, repoFlag string, args []string, reRequest bool, out io.Writer) error {
+// injectParentOverride forces the target PR's upstream parent to be `parent` by
+// prepending a synthetic `upstream: #parent` link to its body, ahead of any
+// existing (and possibly wrong) upstream reference. The forest builder reads the
+// first upstream link, so the override wins. This re-establishes lineage the
+// tool otherwise can't infer — typically a squash-merged parent whose merge
+// made GitHub retarget the target's base to the default branch.
+func injectParentOverride(prs []tree.PullRequest, target, parent int) {
+	for i := range prs {
+		if prs[i].Number == target {
+			prs[i].Body = fmt.Sprintf("upstream: #%d\n\n", parent) + prs[i].Body
+			return
+		}
+	}
+}
+
+func runReplant(ctx context.Context, repoFlag string, args []string, reRequest bool, parent int, out io.Writer) error {
 	repo, err := config.Resolve(repoFlag)
 	if err != nil {
 		return err
@@ -54,19 +71,24 @@ func runReplant(ctx context.Context, repoFlag string, args []string, reRequest b
 	if err != nil {
 		return fmt.Errorf("fetching PRs for %s: %w", repo, err)
 	}
+
+	g := git.New("")
+	target, err := resolveTarget(g, args, prs)
+	if err != nil {
+		return err
+	}
+	// An explicit --parent override must be applied before resolving missing
+	// parents, so the injected upstream link is the one fetched and linked.
+	if parent != 0 {
+		injectParentOverride(prs, target, parent)
+	}
 	// Pull in merged/closed parents referenced by links so a just-merged target
 	// (and its recorded head OID) is present in the tree.
 	prs = append(prs, fetchMissingParents(ctx, client, repo, prs)...)
 
-	g := git.New("")
 	byNum := make(map[int]tree.PullRequest, len(prs))
 	for _, pr := range prs {
 		byNum[pr.Number] = pr
-	}
-
-	target, err := resolveTarget(g, args, prs)
-	if err != nil {
-		return err
 	}
 
 	forest := tree.BuildForest(prs, defaultBranch)
