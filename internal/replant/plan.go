@@ -20,23 +20,49 @@ type Step struct {
 	// the parent merged, else the parent's head branch
 	ParentPR     int  // the parent PR whose pre-rebase head gives the fork point
 	ParentMerged bool // whether the parent was merged (squash) rather than changed
+	TargetSelf   bool // true for the target's own step: its parent sits above the
+	// target and is NOT rebased in this run, so the command layer resolves this
+	// step's new base from the parent's origin head rather than a local branch.
 }
 
 // Plan walks the descendants of the target PR top-down and produces the rebase
-// steps. The target itself is not rebased (it is the PR that merged or changed);
-// only its descendants move. Every parent appears before its children, so the
-// command layer can rebase in order and feed each child its parent's freshly
-// rebased head. It returns an error if the target PR is not in the forest.
+// steps. When the target has a parent, the target itself is rebased first (its
+// parent merged → onto the default branch, or moved → onto the parent's head),
+// marked TargetSelf; a root target only moves its descendants. Every parent
+// appears before its children, so the command layer can rebase in order and
+// feed each child its parent's freshly rebased head. It returns an error if the
+// target PR is not in the forest.
 func Plan(forest []*tree.Node, target int, defaultBranch string) ([]Step, error) {
-	node := find(forest, target)
+	node, parent := findWithParent(forest, target, nil)
 	if node == nil {
 		return nil, fmt.Errorf("PR #%d is not in the tree", target)
 	}
 
 	var plan []Step
+	parentOf := map[int]*tree.Node{}
+
+	// If the target has a parent, the target itself may need re-homing: its
+	// parent merged (→ default branch) or moved (→ parent head). Emit it first,
+	// before its descendants. Whether the step is a real move or a no-op is
+	// decided by the command layer, which has git access.
+	if parent != nil {
+		merged := parent.PR.State == tree.StateMerged
+		newBase := parent.PR.HeadRef
+		if merged {
+			newBase = defaultBranch
+		}
+		plan = append(plan, Step{
+			PR:           node.PR.Number,
+			HeadRef:      node.PR.HeadRef,
+			NewBaseRef:   newBase,
+			ParentPR:     parent.PR.Number,
+			ParentMerged: merged,
+			TargetSelf:   true,
+		})
+	}
+
 	// Breadth-first from the target guarantees parents precede children.
 	queue := append([]*tree.Node(nil), node.Children...)
-	parentOf := map[int]*tree.Node{}
 	for _, c := range node.Children {
 		parentOf[c.PR.Number] = node
 	}
@@ -66,15 +92,17 @@ func Plan(forest []*tree.Node, target int, defaultBranch string) ([]Step, error)
 	return plan, nil
 }
 
-// find returns the node for the given PR number anywhere in the forest, or nil.
-func find(forest []*tree.Node, num int) *tree.Node {
+// findWithParent returns the node for num and its parent node (nil if num is a
+// root or not present), searching the whole forest. parent threads the current
+// parent through the recursion.
+func findWithParent(forest []*tree.Node, num int, parent *tree.Node) (node, par *tree.Node) {
 	for _, n := range forest {
 		if n.PR.Number == num {
-			return n
+			return n, parent
 		}
-		if got := find(n.Children, num); got != nil {
-			return got
+		if got, gotPar := findWithParent(n.Children, num, n); got != nil {
+			return got, gotPar
 		}
 	}
-	return nil
+	return nil, nil
 }

@@ -53,8 +53,9 @@ func TestPlan_RootMerged(t *testing.T) {
 }
 
 func TestPlan_IntermediateChange(t *testing.T) {
-	// Nothing merged; #2 was amended. Replanting from #2 rebases only its
-	// descendants (#3) onto #2's head branch. #1 (ancestor) is untouched.
+	// Nothing merged; replanting from #2 (parent #1 is open). The planner now
+	// emits a target step for #2 (onto its parent's head "a") followed by its
+	// descendant #3. Whether #2's step is a real move is decided downstream.
 	prs := []tree.PullRequest{
 		{Number: 1, State: tree.StateOpen, BaseRef: "main", HeadRef: "a"},
 		{Number: 2, State: tree.StateOpen, BaseRef: "a", HeadRef: "b"},
@@ -67,14 +68,24 @@ func TestPlan_IntermediateChange(t *testing.T) {
 		t.Fatalf("Plan: %v", err)
 	}
 
-	if got, want := steps(plan), []int{3}; !equalInts(got, want) {
+	if got, want := steps(plan), []int{2, 3}; !equalInts(got, want) {
 		t.Fatalf("order: got %v, want %v", got, want)
 	}
-	if plan[0].NewBaseRef != "b" || plan[0].ParentMerged {
-		t.Errorf("#3 step: got base=%q merged=%v, want base=b merged=false", plan[0].NewBaseRef, plan[0].ParentMerged)
+	// #2 is the target; its parent #1 is open → rebase onto #1's head "a".
+	if !plan[0].TargetSelf {
+		t.Errorf("#2 should be the target step (TargetSelf=true)")
 	}
-	if plan[0].HeadRef != "c" {
-		t.Errorf("#3 HeadRef: got %q, want %q", plan[0].HeadRef, "c")
+	if plan[0].NewBaseRef != "a" || plan[0].ParentMerged || plan[0].ParentPR != 1 {
+		t.Errorf("#2 step: got base=%q merged=%v parent=%d, want base=a merged=false parent=1",
+			plan[0].NewBaseRef, plan[0].ParentMerged, plan[0].ParentPR)
+	}
+	if plan[0].HeadRef != "b" {
+		t.Errorf("#2 HeadRef: got %q, want %q", plan[0].HeadRef, "b")
+	}
+	// #3's parent (#2) is in the plan, not merged → onto #2's head "b".
+	if plan[1].TargetSelf || plan[1].NewBaseRef != "b" || plan[1].ParentMerged {
+		t.Errorf("#3 step: got self=%v base=%q merged=%v, want self=false base=b merged=false",
+			plan[1].TargetSelf, plan[1].NewBaseRef, plan[1].ParentMerged)
 	}
 }
 
@@ -129,6 +140,58 @@ func TestPlan_BranchingDescendantsAreTopDown(t *testing.T) {
 	}
 	if pos[2] > pos[4] {
 		t.Errorf("#2 must come before its child #4: got %v", steps(plan))
+	}
+}
+
+func TestPlan_TargetWithMergedParentRebasesItself(t *testing.T) {
+	// #1 squash-merged into main; #2 stacks on #1 (linked via upstream); #3 on #2.
+	// Replanting from #2 must rebase #2 itself onto main (its parent merged),
+	// then #3 onto #2's head "b".
+	prs := []tree.PullRequest{
+		{Number: 1, State: tree.StateMerged, BaseRef: "main", HeadRef: "a", Body: "upstream: #0"},
+		{Number: 2, State: tree.StateOpen, BaseRef: "main", HeadRef: "b", Body: "upstream: #1"},
+		{Number: 3, State: tree.StateOpen, BaseRef: "b", HeadRef: "c"},
+	}
+	forest := tree.BuildForest(prs, "main")
+
+	plan, err := Plan(forest, 2, "main")
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+
+	if got, want := steps(plan), []int{2, 3}; !equalInts(got, want) {
+		t.Fatalf("order: got %v, want %v", got, want)
+	}
+	if !plan[0].TargetSelf {
+		t.Errorf("#2 should be the target step (TargetSelf=true)")
+	}
+	if plan[0].NewBaseRef != "main" || !plan[0].ParentMerged || plan[0].ParentPR != 1 {
+		t.Errorf("#2 step: got base=%q merged=%v parent=%d, want base=main merged=true parent=1",
+			plan[0].NewBaseRef, plan[0].ParentMerged, plan[0].ParentPR)
+	}
+	if plan[1].TargetSelf || plan[1].NewBaseRef != "b" {
+		t.Errorf("#3 step: got self=%v base=%q, want self=false base=b", plan[1].TargetSelf, plan[1].NewBaseRef)
+	}
+}
+
+func TestPlan_RootTargetHasNoTargetStep(t *testing.T) {
+	// #1 is a root (no parent). Replanting from it must NOT emit a target step;
+	// the first step is a descendant.
+	prs := []tree.PullRequest{
+		{Number: 1, State: tree.StateOpen, BaseRef: "main", HeadRef: "a"},
+		{Number: 2, State: tree.StateOpen, BaseRef: "a", HeadRef: "b"},
+	}
+	forest := tree.BuildForest(prs, "main")
+
+	plan, err := Plan(forest, 1, "main")
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if got, want := steps(plan), []int{2}; !equalInts(got, want) {
+		t.Fatalf("order: got %v, want %v", got, want)
+	}
+	if plan[0].TargetSelf {
+		t.Errorf("root target must not produce a TargetSelf step")
 	}
 }
 
