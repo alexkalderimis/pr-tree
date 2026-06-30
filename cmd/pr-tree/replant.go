@@ -134,15 +134,22 @@ func printStep(out io.Writer, g *git.Git, byNum map[int]tree.PullRequest, defaul
 	child := byNum[s.PR]
 	parent := byNum[s.ParentPR]
 
+	// Localize endpoints up front so the no-op check below can use them.
+	_ = g.FetchOID("origin", parent.HeadOID)
+	_ = g.FetchOID("origin", child.HeadOID)
+
+	if s.TargetSelf {
+		if placed, _ := targetPlacedDryRun(g, s, defaultBranch, parent.HeadOID, child.HeadOID); placed {
+			fmt.Fprintf(out, "  #%d (%s) ✓ already based on #%d — no change\n", s.PR, child.Title, s.ParentPR)
+			return
+		}
+	}
+
 	was := ""
 	if child.BaseRef != s.NewBaseRef {
 		was = fmt.Sprintf(" (was %s)", child.BaseRef)
 	}
 	fmt.Fprintf(out, "  #%d (%s) → rebase onto %s%s\n", s.PR, child.Title, s.NewBaseRef, was)
-
-	// Localize both endpoints; merged parents may have deleted branches.
-	_ = g.FetchOID("origin", parent.HeadOID)
-	_ = g.FetchOID("origin", child.HeadOID)
 
 	fork, err := g.MergeBase(parent.HeadOID, child.HeadOID)
 	if err != nil {
@@ -164,6 +171,21 @@ func printStep(out io.Writer, g *git.Git, byNum map[int]tree.PullRequest, defaul
 		return
 	}
 	fmt.Fprintf(out, "      keep %s\n", summarize(kept))
+}
+
+// targetPlacedDryRun reports whether the target step is already in place, for
+// dry-run reporting. Open parent: the parent's current head is already an
+// ancestor of the target. Merged parent: the target sits on the default branch
+// with the old parent commits shed.
+func targetPlacedDryRun(g *git.Git, s replant.Step, defaultBranch, parentHeadOID, childHeadOID string) (bool, error) {
+	if !s.ParentMerged {
+		return g.IsAncestor(parentHeadOID, childHeadOID)
+	}
+	base, err := g.RevParse("origin/" + defaultBranch)
+	if err != nil {
+		return false, err
+	}
+	return g.AlreadyReplanted(base, parentHeadOID, childHeadOID)
 }
 
 // resolveDropped lists the parent commits the rebase sheds: the range from the

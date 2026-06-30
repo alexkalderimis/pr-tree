@@ -312,6 +312,57 @@ func TestPushForceWithLease(t *testing.T) {
 	}
 }
 
+func TestRebaseMergedTargetOntoDefault(t *testing.T) {
+	// Shape from initRepo: main=c0; a=c0-a1-a2; b=c0-a1-a2-b1.
+	// Simulate #A (branch a) squash-merged into main as a single commit, then
+	// rebase the target branch b --onto main, dropping a1/a2 and keeping b1.
+	dir := initRepo(t)
+	g := New(dir)
+
+	// Squash-merge a into main as one commit.
+	run(t, dir, "checkout", "-q", "main")
+	run(t, dir, "merge", "--squash", "a")
+	run(t, dir, "commit", "-q", "-m", "squash of a")
+	mainOID, err := g.RevParse("main")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Fork point of the target b is the tip of a (where b diverged).
+	aOID, err := g.RevParse("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bOID, err := g.RevParse("b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fork, err := g.MergeBase(aOID, bOID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := g.Rebase(mainOID, fork, "b"); err != nil {
+		t.Fatalf("Rebase: %v", err)
+	}
+
+	// b now sits on main and no longer contains a's tip commit.
+	onMain, err := g.IsAncestor(mainOID, "b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !onMain {
+		t.Error("b should sit on main after rebase")
+	}
+	hasOldParent, err := g.IsAncestor(aOID, "b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hasOldParent {
+		t.Error("b should no longer contain the old parent commits a1/a2")
+	}
+}
+
 func TestFetchOID(t *testing.T) {
 	// A second repo acts as a remote; fetch one of its ref-tip OIDs by SHA.
 	remote := initRepo(t)

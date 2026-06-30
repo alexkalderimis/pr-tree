@@ -84,11 +84,17 @@ func runApply(ctx context.Context, repoFlag string, args []string, yes, reReques
 			g.Checkout(startBranch)
 			return err
 		}
-		if done, err := g.AlreadyReplanted(newBaseOID, parent.HeadOID, s.HeadRef); err != nil {
+		done, err := targetOrDescendantPlaced(g, s, newBaseOID, parent.HeadOID, child.HeadOID)
+		if err != nil {
 			g.Checkout(startBranch)
 			return err
-		} else if done {
-			fmt.Fprintf(out, "  #%d (%s) ✓ already replanted, skipping\n", s.PR, child.Title)
+		}
+		if done {
+			if s.TargetSelf {
+				fmt.Fprintf(out, "  #%d (%s) ✓ already based on #%d — no change\n", s.PR, child.Title, s.ParentPR)
+			} else {
+				fmt.Fprintf(out, "  #%d (%s) ✓ already replanted, skipping\n", s.PR, child.Title)
+			}
 			continue
 		}
 		if err := g.PrepareBranch(s.HeadRef, child.HeadOID); err != nil {
@@ -175,6 +181,17 @@ func baseRef(defaultBranch string, s replant.Step, parentHeadOID string) string 
 // resolveNewBase turns a Step's intended base into a concrete OID.
 func resolveNewBase(g *git.Git, defaultBranch string, s replant.Step, parentHeadOID string) (string, error) {
 	return g.RevParse(baseRef(defaultBranch, s, parentHeadOID))
+}
+
+// targetOrDescendantPlaced reports whether a step needs no work. For an open
+// target step the predicate is "the parent's current head is already an
+// ancestor of the target head" (nothing moved). For a merged parent, or any
+// descendant, the standard AlreadyReplanted check applies.
+func targetOrDescendantPlaced(g *git.Git, s replant.Step, newBaseOID, parentHeadOID, childHeadOID string) (bool, error) {
+	if s.TargetSelf && !s.ParentMerged {
+		return g.IsAncestor(parentHeadOID, childHeadOID)
+	}
+	return g.AlreadyReplanted(newBaseOID, parentHeadOID, s.HeadRef)
 }
 
 // confirmed reads a line and reports whether it is an affirmative y/yes.
