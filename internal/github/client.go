@@ -215,6 +215,47 @@ func (c *Client) FetchPRsByNumber(ctx context.Context, repo config.Repo, numbers
 	return prs, nil
 }
 
+const prCommitsQuery = `query($owner:String!,$name:String!,$number:Int!){
+  repository(owner:$owner,name:$name){
+    pullRequest(number:$number){
+      commits(first:250){nodes{commit{messageHeadline}}}
+    }
+  }
+}`
+
+// FetchPRCommitSubjects returns the commit subjects (message headlines) of a
+// PR's commits. It is used to recognise which commits on a descendant branch
+// came from an already-merged parent whose recorded head no longer shares SHAs
+// with that branch (squash-merge + restack). Returns nil if the PR is missing.
+// Capped at the first 250 commits, which covers any realistic stacked PR.
+func (c *Client) FetchPRCommitSubjects(ctx context.Context, repo config.Repo, number int) ([]string, error) {
+	var data struct {
+		Repository struct {
+			PullRequest *struct {
+				Commits struct {
+					Nodes []struct {
+						Commit struct {
+							MessageHeadline string `json:"messageHeadline"`
+						} `json:"commit"`
+					} `json:"nodes"`
+				} `json:"commits"`
+			} `json:"pullRequest"`
+		} `json:"repository"`
+	}
+	vars := map[string]any{"owner": repo.Owner, "name": repo.Name, "number": number}
+	if err := c.do(ctx, prCommitsQuery, vars, &data); err != nil {
+		return nil, err
+	}
+	if data.Repository.PullRequest == nil {
+		return nil, nil
+	}
+	subjects := make([]string, 0, len(data.Repository.PullRequest.Commits.Nodes))
+	for _, n := range data.Repository.PullRequest.Commits.Nodes {
+		subjects = append(subjects, n.Commit.MessageHeadline)
+	}
+	return subjects, nil
+}
+
 const requestReviewsMutation = `mutation($pr:ID!,$users:[ID!]!){
   requestReviews(input:{pullRequestId:$pr,userIds:$users,union:true}){clientMutationId}
 }`

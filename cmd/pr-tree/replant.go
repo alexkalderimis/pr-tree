@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -18,7 +19,7 @@ import (
 
 func newReplantCmd() *cobra.Command {
 	var apply, yes, reRequest bool
-	var parent int
+	var parent, keep int
 	cmd := &cobra.Command{
 		Use:   "replant [#PR]",
 		Short: "Rebase a PR's descendants (dry-run unless --apply)",
@@ -29,16 +30,37 @@ func newReplantCmd() *cobra.Command {
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if apply {
-				return runApply(cmd.Context(), repoFlag, args, yes, reRequest, parent, cmd.InOrStdin(), cmd.OutOrStdout())
+				return runApply(cmd.Context(), repoFlag, args, yes, reRequest, parent, keep, cmd.InOrStdin(), cmd.OutOrStdout())
 			}
-			return runReplant(cmd.Context(), repoFlag, args, reRequest, parent, cmd.OutOrStdout())
+			return runReplant(cmd.Context(), repoFlag, args, reRequest, parent, keep, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().BoolVar(&apply, "apply", false, "Rebase and force-push (default: dry-run)")
 	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip the pre-push confirmation prompt")
 	cmd.Flags().BoolVar(&reRequest, "re-request-reviews", false, "Re-request review from approvers after force-push")
 	cmd.Flags().IntVar(&parent, "parent", 0, "Override the target's upstream parent PR (bare number, no #) when its lineage can't be inferred — e.g. a squash-merged parent that caused GitHub to retarget the base")
+	cmd.Flags().IntVar(&keep, "keep", 0, "Keep only the newest N commits of the target, dropping the rest as already-merged (overrides automatic fork detection)")
 	return cmd
+}
+
+// mergedParentSubjects fetches the subject set used to recognise an
+// already-merged parent's commits on a drifted target branch. It fetches the
+// commits of the target step's parent PR and combines them with the parent's
+// title. Returns nil (best-effort) when there is no target step or the fetch
+// fails — fork detection then falls back to ancestry or --keep.
+func mergedParentSubjects(ctx context.Context, client *github.Client, repo config.Repo, plan []replant.Step, byNum map[int]tree.PullRequest) map[string]bool {
+	for _, s := range plan {
+		if !s.TargetSelf {
+			continue
+		}
+		parent := byNum[s.ParentPR]
+		subjects, err := client.FetchPRCommitSubjects(ctx, repo, s.ParentPR)
+		if err != nil {
+			return nil
+		}
+		return subjectSet(subjects, parent.Title)
+	}
+	return nil
 }
 
 // injectParentOverride forces the target PR's upstream parent to be `parent` by
@@ -56,7 +78,7 @@ func injectParentOverride(prs []tree.PullRequest, target, parent int) {
 	}
 }
 
-func runReplant(ctx context.Context, repoFlag string, args []string, reRequest bool, parent int, out io.Writer) error {
+func runReplant(ctx context.Context, repoFlag string, args []string, reRequest bool, parent, keep int, out io.Writer) error {
 	repo, err := config.Resolve(repoFlag)
 	if err != nil {
 		return err
@@ -105,12 +127,13 @@ func runReplant(ctx context.Context, repoFlag string, args []string, reRequest b
 	fmt.Fprintf(out, "Replant plan for #%d (%s) — %s:\n\n", target, tpr.Title, reason)
 
 	if len(plan) == 0 {
-		fmt.Fprintln(out, "  (no descendants to replant)")
+		fmt.Fprintln(out, "  (nothing to replant: no parent to move onto and no descendants)")
 		return nil
 	}
 
+	mergedSubjects := mergedParentSubjects(ctx, client, repo, plan, byNum)
 	for _, s := range plan {
-		printStep(out, g, byNum, defaultBranch, s)
+		printStep(out, g, byNum, defaultBranch, s, keep, mergedSubjects)
 		if reRequest {
 			pr := byNum[s.PR]
 			if len(pr.Approvers) > 0 {
@@ -152,7 +175,7 @@ func resolveTarget(g *git.Git, args []string, prs []tree.PullRequest) (int, erro
 // printStep renders one rebase, resolving the fork point and the drop/keep
 // commit ranges via git. Resolution failures degrade to a note rather than
 // aborting the whole dry-run.
-func printStep(out io.Writer, g *git.Git, byNum map[int]tree.PullRequest, defaultBranch string, s replant.Step) {
+func printStep(out io.Writer, g *git.Git, byNum map[int]tree.PullRequest, defaultBranch string, s replant.Step, keep int, mergedSubjects map[string]bool) {
 	child := byNum[s.PR]
 	parent := byNum[s.ParentPR]
 
@@ -173,21 +196,26 @@ func printStep(out io.Writer, g *git.Git, byNum map[int]tree.PullRequest, defaul
 	}
 	fmt.Fprintf(out, "  #%d (%s) → rebase onto %s%s\n", s.PR, child.Title, s.NewBaseRef, was)
 
-	fork, err := g.MergeBase(parent.HeadOID, child.HeadOID)
+	fork, err := resolveFork(g, baseRef(defaultBranch, s, parent.HeadOID), s, child, parent, keep, mergedSubjects)
 	if err != nil {
-		fmt.Fprintf(out, "      (could not compute fork point: %v)\n", err)
+		var unknown *forkUnknownError
+		if errors.As(err, &unknown) {
+			fmt.Fprintf(out, "      ⚠ %v\n", err)
+		} else {
+			fmt.Fprintf(out, "      (could not compute fork point: %v)\n", err)
+		}
 		return
 	}
 
-	if dropped := resolveDropped(g, defaultBranch, s.NewBaseRef, fork); len(dropped) > 0 {
+	if dropped := resolveDropped(g, defaultBranch, s.NewBaseRef, fork.OID); len(dropped) > 0 {
 		via := fmt.Sprintf("parent #%d", s.ParentPR)
 		if s.ParentMerged {
-			via = fmt.Sprintf("merged via #%d", s.ParentPR)
+			via = fmt.Sprintf("already merged via #%d", s.ParentPR)
 		}
-		fmt.Fprintf(out, "      drop %s  (%s)\n", summarize(dropped), via)
+		fmt.Fprintf(out, "      drop %s  (%s; fork: %s)\n", summarize(dropped), via, fork.Method)
 	}
 
-	kept, err := g.RevList(fork + ".." + child.HeadOID)
+	kept, err := g.RevList(fork.OID + ".." + child.HeadOID)
 	if err != nil {
 		fmt.Fprintf(out, "      (could not list kept commits: %v)\n", err)
 		return

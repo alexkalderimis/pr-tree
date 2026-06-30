@@ -15,7 +15,7 @@ import (
 	"github.com/alexkalderimis/pr-tree/internal/tree"
 )
 
-func runApply(ctx context.Context, repoFlag string, args []string, yes, reRequest bool, parent int, in io.Reader, out io.Writer) error {
+func runApply(ctx context.Context, repoFlag string, args []string, yes, reRequest bool, parent, keep int, in io.Reader, out io.Writer) error {
 	repo, err := config.Resolve(repoFlag)
 	if err != nil {
 		return err
@@ -77,6 +77,10 @@ func runApply(ctx context.Context, repoFlag string, args []string, yes, reReques
 		return fmt.Errorf("fetching origin: %w", err)
 	}
 
+	// For a drifted target (squash-merged parent), recognising the parent's
+	// commits on the branch needs the parent's actual commit subjects.
+	mergedSubjects := mergedParentSubjects(ctx, client, repo, plan, byNum)
+
 	// Phase A: rebase every descendant locally; nothing is pushed yet.
 	var rebased []replant.Step
 	for _, s := range plan {
@@ -107,12 +111,18 @@ func runApply(ctx context.Context, repoFlag string, args []string, yes, reReques
 			g.Checkout(startBranch)
 			return err
 		}
-		fork, err := g.MergeBase(parent.HeadOID, child.HeadOID)
+		fork, err := resolveFork(g, baseRef(defaultBranch, s, parent.HeadOID), s, child, parent, keep, mergedSubjects)
 		if err != nil {
 			g.Checkout(startBranch)
+			var unknown *forkUnknownError
+			if errors.As(err, &unknown) {
+				fmt.Fprintf(out, "\nCan't safely replant #%d (%s): %v\n", s.PR, child.Title, err)
+				fmt.Fprintln(out, "(nothing has been pushed)")
+				return fmt.Errorf("undetermined fork for #%d", s.PR)
+			}
 			return err
 		}
-		if err := g.Rebase(newBaseOID, fork, s.HeadRef); err != nil {
+		if err := g.Rebase(newBaseOID, fork.OID, s.HeadRef); err != nil {
 			if errors.Is(err, git.ErrRebaseConflict) {
 				fmt.Fprintf(out, "\nConflict rebasing #%d (%s) on branch %q.\n", s.PR, child.Title, s.HeadRef)
 				fmt.Fprintln(out, "Resolve it, run 'git rebase --continue', then re-run 'pr-tree replant --apply' to finish the rest.")
