@@ -87,6 +87,20 @@ func Subtree(forest []*Node, prNo int) []*Node {
 	return nil
 }
 
+// WholeTree returns a single-root forest for the tree containing prNo: the
+// forest root reachable by walking up from prNo. Returns nil if prNo is absent.
+func WholeTree(forest []*Node, prNo int) []*Node {
+	if findNode(forest, prNo) == nil {
+		return nil
+	}
+	for _, root := range forest {
+		if findNode([]*Node{root}, prNo) != nil {
+			return []*Node{root}
+		}
+	}
+	return nil
+}
+
 // findNode returns the node for prNo anywhere in the forest, or nil.
 func findNode(forest []*Node, prNo int) *Node {
 	for _, n := range forest {

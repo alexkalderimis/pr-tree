@@ -61,6 +61,26 @@ func TestSubtree(t *testing.T) {
 	}
 }
 
+func TestWholeTree(t *testing.T) {
+	// #1 -> #2 -> #3 ; #4 (separate root)
+	prs := []PullRequest{
+		{Number: 1, State: StateOpen, BaseRef: "main", HeadRef: "a"},
+		{Number: 2, State: StateOpen, BaseRef: "a", HeadRef: "b"},
+		{Number: 3, State: StateOpen, BaseRef: "b", HeadRef: "c"},
+		{Number: 4, State: StateOpen, BaseRef: "main", HeadRef: "d"},
+	}
+	forest := BuildForest(prs, "main")
+
+	// From a mid-tree PR, WholeTree returns its forest root's whole tree.
+	got := WholeTree(forest, 3)
+	eq(t, numbers(got), []int{1})
+	eq(t, numbers(got[0].Children), []int{2})
+
+	if WholeTree(forest, 99) != nil {
+		t.Fatalf("absent PR should yield nil")
+	}
+}
+
 func TestLiveRoots(t *testing.T) {
 	// #1 MERGED (root) -> #2 OPEN -> #3 OPEN ; #4 OPEN (root) -> #5 DRAFT
 	// #6 CLOSED (root) -> #7 OPEN
