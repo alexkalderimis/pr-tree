@@ -81,6 +81,52 @@ func TestWholeTree(t *testing.T) {
 	}
 }
 
+func TestFilterKeeps(t *testing.T) {
+	approved := PullRequest{Number: 1, State: StateOpen, ReviewDecision: ReviewApproved}
+	draftApproved := PullRequest{Number: 2, State: StateDraft, ReviewDecision: ReviewApproved}
+	openUnapproved := PullRequest{Number: 3, State: StateOpen}
+
+	if !(Filter{}).Keeps(openUnapproved) {
+		t.Fatal("empty filter should keep everything")
+	}
+	if (Filter{Approved: true}).Keeps(openUnapproved) {
+		t.Fatal("--approved should drop unapproved PR")
+	}
+	if !(Filter{Approved: true}).Keeps(approved) {
+		t.Fatal("--approved should keep approved PR")
+	}
+	if (Filter{Active: true}).Keeps(draftApproved) {
+		t.Fatal("--active should drop draft PR")
+	}
+	if (Filter{Approved: true, Active: true}).Keeps(draftApproved) {
+		t.Fatal("approved+active should drop a draft (fails active)")
+	}
+}
+
+func TestPruneNodes_ReparentsSurvivors(t *testing.T) {
+	// #1 -> #2 -> #3 ; drop #2 -> #3 slides up under #1.
+	prs := []PullRequest{
+		{Number: 1, State: StateOpen, BaseRef: "main", HeadRef: "a"},
+		{Number: 2, State: StateDraft, BaseRef: "a", HeadRef: "b"},
+		{Number: 3, State: StateOpen, BaseRef: "b", HeadRef: "c"},
+	}
+	forest := BuildForest(prs, "main")
+	got := PruneNodes(forest, Filter{Active: true}.Keeps)
+	eq(t, numbers(got), []int{1})
+	eq(t, numbers(got[0].Children), []int{3})
+}
+
+func TestPruneNodes_PromotesToRoot(t *testing.T) {
+	// #1 -> #2 ; drop #1 (root) -> #2 becomes a root.
+	prs := []PullRequest{
+		{Number: 1, State: StateDraft, BaseRef: "main", HeadRef: "a"},
+		{Number: 2, State: StateOpen, BaseRef: "a", HeadRef: "b"},
+	}
+	forest := BuildForest(prs, "main")
+	got := PruneNodes(forest, Filter{Active: true}.Keeps)
+	eq(t, numbers(got), []int{2})
+}
+
 func TestLiveRoots(t *testing.T) {
 	// #1 MERGED (root) -> #2 OPEN -> #3 OPEN ; #4 OPEN (root) -> #5 DRAFT
 	// #6 CLOSED (root) -> #7 OPEN

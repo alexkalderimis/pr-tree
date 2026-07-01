@@ -5,6 +5,8 @@ package tree
 type Filter struct {
 	Mine     bool
 	ToReview bool
+	Approved bool
+	Active   bool
 	Viewer   string // the authenticated user's login
 }
 
@@ -112,6 +114,47 @@ func findNode(forest []*Node, prNo int) *Node {
 		}
 	}
 	return nil
+}
+
+// Keeps reports whether a PR survives the node-level narrowing filters
+// (--approved / --active). Unlike matches, it does not consider Mine/ToReview.
+// Exported so cmd/pr-tree can pass it as a method value to PruneNodes.
+func (f Filter) Keeps(pr PullRequest) bool {
+	if f.Approved && pr.ReviewDecision != ReviewApproved {
+		return false
+	}
+	if f.Active && pr.State == StateDraft {
+		return false
+	}
+	return true
+}
+
+// PruneNodes returns a new forest keeping only nodes where keep(pr) is true.
+// A dropped node's surviving descendants re-attach to their nearest surviving
+// ancestor, or become roots when no ancestor survives. The input is not
+// mutated.
+func PruneNodes(forest []*Node, keep func(PullRequest) bool) []*Node {
+	var roots []*Node
+	var walk func(n *Node, parent *Node)
+	walk = func(n *Node, parent *Node) {
+		next := parent
+		if keep(n.PR) {
+			copied := &Node{PR: n.PR}
+			if parent == nil {
+				roots = append(roots, copied)
+			} else {
+				parent.Children = append(parent.Children, copied)
+			}
+			next = copied
+		}
+		for _, c := range n.Children {
+			walk(c, next)
+		}
+	}
+	for _, root := range forest {
+		walk(root, nil)
+	}
+	return roots
 }
 
 // LiveRoots returns a flat list of "live roots": every node with no unmerged
