@@ -48,6 +48,36 @@ func TestBuildReplantView_ReparentedWithDrop(t *testing.T) {
 	}
 }
 
+func TestBuildReplantView_MovedOpenParentDrops(t *testing.T) {
+	// Open parent whose recorded head (masterTip) is NOT on the child branch
+	// (moved/rewritten) — collapsed Stack (not reparented), but still sheds the
+	// already-present commit. Exercises the origin-qualified base for the open case.
+	g, _, qOID, masterTip := buildDriftRepo(t)
+	byNum := map[int]tree.PullRequest{
+		1: {Number: 1, HeadRef: "pr1", Title: "parent", State: tree.StateOpen, HeadOID: masterTip},
+		2: {Number: 2, HeadRef: "child", Title: "own work", State: tree.StateOpen, HeadOID: qOID},
+	}
+	forest := []*tree.Node{{PR: byNum[1], Children: []*tree.Node{{PR: byNum[2]}}}}
+	plan := []replant.Step{
+		{PR: 2, HeadRef: "child", NewBaseRef: "pr1", ParentPR: 1, ParentMerged: false, TargetSelf: true},
+	}
+	merged := subjectSet([]string{"feat: parent work"}, "")
+
+	in := buildReplantView(g, byNum, forest, "master", 2, 0, plan, merged, "")
+
+	if in.Reparented {
+		t.Error("open parent must render a collapsed Stack, not Before/After")
+	}
+	if len(in.Dropped) == 0 {
+		t.Fatal("expected a dropped commit for the moved open parent")
+	}
+	for _, c := range in.Dropped {
+		if c.Subject == "feat: own work" {
+			t.Errorf("own work must not be dropped: %+v", in.Dropped)
+		}
+	}
+}
+
 func TestBuildReplantView_CollapsedWhenNoTargetStep(t *testing.T) {
 	g, _, qOID, _ := buildDriftRepo(t)
 	byNum := map[int]tree.PullRequest{

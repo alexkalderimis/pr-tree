@@ -171,17 +171,11 @@ func resolveTarget(g *git.Git, args []string, prs []tree.PullRequest) (int, erro
 	return 0, fmt.Errorf("no open PR has head branch %q — pass an explicit #PR", branch)
 }
 
-// resolveDropped lists the parent commits the rebase sheds: the range from the
-// new base to the fork point. Best-effort — returns nil if the new base can't
-// be resolved locally.
-func resolveDropped(g *git.Git, defaultBranch, newBaseRef, fork string) []git.Commit {
-	base, err := g.RevParse(newBaseRef)
-	if err != nil {
-		if base, err = g.RevParse("origin/" + newBaseRef); err != nil {
-			return nil
-		}
-	}
-	dropped, err := g.RevList(base + ".." + fork)
+// resolveDropped lists the commits a rebase sheds: those reachable from the
+// fork point but not from baseRef (the same origin-qualified base the rebase
+// lands on). Best-effort — returns nil if the range can't be listed.
+func resolveDropped(g *git.Git, baseRef, fork string) []git.Commit {
+	dropped, err := g.RevList(baseRef + ".." + fork)
 	if err != nil {
 		return nil
 	}

@@ -58,7 +58,8 @@ func buildReplantView(g *git.Git, byNum map[int]tree.PullRequest, forest []*tree
 	child := byNum[ts.PR]
 	_ = g.FetchOID("origin", parent.HeadOID)
 	_ = g.FetchOID("origin", child.HeadOID)
-	fork, err := resolveFork(g, baseRef(defaultBranch, *ts, parent.HeadOID), *ts, child, parent, keep, mergedSubjects)
+	fb := baseRef(defaultBranch, *ts, parent.HeadOID)
+	fork, err := resolveFork(g, fb, *ts, child, parent, keep, mergedSubjects)
 	if err != nil {
 		var unknown *forkUnknownError
 		if errors.As(err, &unknown) {
@@ -66,7 +67,7 @@ func buildReplantView(g *git.Git, byNum map[int]tree.PullRequest, forest []*tree
 		}
 		return in
 	}
-	for _, c := range resolveDropped(g, defaultBranch, ts.NewBaseRef, fork.OID) {
+	for _, c := range resolveDropped(g, fb, fork.OID) {
 		in.Dropped = append(in.Dropped, render.Commit{OID: c.OID, Subject: c.Subject})
 	}
 	in.DropVia = ts.ParentPR

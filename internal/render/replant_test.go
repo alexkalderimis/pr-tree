@@ -89,6 +89,14 @@ func TestReplantPlan_ForkWarning(t *testing.T) {
 	}
 }
 
+func TestReplantPlan_ColorEmitsANSI(t *testing.T) {
+	in := ReplantPlanInput{Target: &tree.Node{PR: tree.PullRequest{Number: 1, HeadRef: "b", Title: "t", State: tree.StateOpen}}}
+	got := ReplantPlan(in, Options{Color: true})
+	if !strings.Contains(got, "\x1b[") {
+		t.Fatalf("expected ANSI escapes with Color:true, got plain:\n%q", got)
+	}
+}
+
 func TestReplantPlan_TruncatesLongTitle(t *testing.T) {
 	long := strings.Repeat("a", 60)
 	in := ReplantPlanInput{
