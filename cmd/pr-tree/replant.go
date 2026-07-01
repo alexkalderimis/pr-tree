@@ -2,23 +2,25 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/alexkalderimis/pr-tree/internal/config"
 	"github.com/alexkalderimis/pr-tree/internal/git"
 	"github.com/alexkalderimis/pr-tree/internal/github"
+	"github.com/alexkalderimis/pr-tree/internal/render"
 	"github.com/alexkalderimis/pr-tree/internal/replant"
 	"github.com/alexkalderimis/pr-tree/internal/tree"
 )
 
 func newReplantCmd() *cobra.Command {
-	var apply, yes, reRequest bool
+	var apply, yes, reRequest, noColor bool
 	var parent, keep int
 	cmd := &cobra.Command{
 		Use:   "replant [#PR]",
@@ -29,10 +31,11 @@ func newReplantCmd() *cobra.Command {
 			"it rebases each descendant and force-pushes them.",
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			color := colorEnabled(noColor, os.Getenv("NO_COLOR"), term.IsTerminal(int(os.Stdout.Fd())))
 			if apply {
-				return runApply(cmd.Context(), repoFlag, args, yes, reRequest, parent, keep, cmd.InOrStdin(), cmd.OutOrStdout())
+				return runApply(cmd.Context(), repoFlag, args, yes, reRequest, parent, keep, color, cmd.InOrStdin(), cmd.OutOrStdout())
 			}
-			return runReplant(cmd.Context(), repoFlag, args, reRequest, parent, keep, cmd.OutOrStdout())
+			return runReplant(cmd.Context(), repoFlag, args, reRequest, parent, keep, color, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().BoolVar(&apply, "apply", false, "Rebase and force-push (default: dry-run)")
@@ -40,6 +43,7 @@ func newReplantCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&reRequest, "re-request-reviews", false, "Re-request review from approvers after force-push")
 	cmd.Flags().IntVar(&parent, "parent", 0, "Override the target's upstream parent PR (bare number, no #) when its lineage can't be inferred — e.g. a squash-merged parent that caused GitHub to retarget the base")
 	cmd.Flags().IntVar(&keep, "keep", 0, "Keep only the newest N commits of the target, dropping the rest as already-merged (overrides automatic fork detection)")
+	cmd.Flags().BoolVar(&noColor, "no-color", false, "Disable colored output")
 	return cmd
 }
 
@@ -78,7 +82,7 @@ func injectParentOverride(prs []tree.PullRequest, target, parent int) {
 	}
 }
 
-func runReplant(ctx context.Context, repoFlag string, args []string, reRequest bool, parent, keep int, out io.Writer) error {
+func runReplant(ctx context.Context, repoFlag string, args []string, reRequest bool, parent, keep int, color bool, out io.Writer) error {
 	repo, err := config.Resolve(repoFlag)
 	if err != nil {
 		return err
@@ -119,34 +123,29 @@ func runReplant(ctx context.Context, repoFlag string, args []string, reRequest b
 		return err
 	}
 
-	tpr := byNum[target]
-	reason := "restacking descendants onto its updated head"
-	if tpr.State == tree.StateMerged {
-		reason = fmt.Sprintf("merged — moving children onto %s", defaultBranch)
-	}
-	fmt.Fprintf(out, "Replant plan for #%d (%s) — %s:\n\n", target, tpr.Title, reason)
-
 	if len(plan) == 0 {
 		fmt.Fprintln(out, "  (nothing to replant: no parent to move onto and no descendants)")
 		return nil
 	}
 
 	mergedSubjects := mergedParentSubjects(ctx, client, repo, plan, byNum)
-	for _, s := range plan {
-		printStep(out, g, byNum, defaultBranch, s, keep, mergedSubjects)
-		if reRequest {
+	footer := "\n(dry-run: no branches were rebased or pushed — pass --apply to execute)"
+	view := buildReplantView(g, byNum, forest, defaultBranch, target, keep, plan, mergedSubjects, footer)
+	fmt.Fprint(out, render.ReplantPlan(view, render.Options{Color: color}))
+
+	if reRequest {
+		for _, s := range plan {
 			pr := byNum[s.PR]
-			if len(pr.Approvers) > 0 {
-				logins := make([]string, 0, len(pr.Approvers))
-				for _, a := range pr.Approvers {
-					logins = append(logins, "@"+a.Login)
-				}
-				fmt.Fprintf(out, "      would re-request review: %s\n", strings.Join(logins, ", "))
+			if len(pr.Approvers) == 0 {
+				continue
 			}
+			logins := make([]string, 0, len(pr.Approvers))
+			for _, a := range pr.Approvers {
+				logins = append(logins, "@"+a.Login)
+			}
+			fmt.Fprintf(out, "Will re-request review: #%d %s\n", s.PR, strings.Join(logins, ", "))
 		}
 	}
-
-	fmt.Fprintf(out, "\n(dry-run: no branches were rebased or pushed — pass --apply to execute)\n")
 	return nil
 }
 
@@ -172,72 +171,6 @@ func resolveTarget(g *git.Git, args []string, prs []tree.PullRequest) (int, erro
 	return 0, fmt.Errorf("no open PR has head branch %q — pass an explicit #PR", branch)
 }
 
-// printStep renders one rebase, resolving the fork point and the drop/keep
-// commit ranges via git. Resolution failures degrade to a note rather than
-// aborting the whole dry-run.
-func printStep(out io.Writer, g *git.Git, byNum map[int]tree.PullRequest, defaultBranch string, s replant.Step, keep int, mergedSubjects map[string]bool) {
-	child := byNum[s.PR]
-	parent := byNum[s.ParentPR]
-
-	// Localize endpoints up front so the no-op check below can use them.
-	_ = g.FetchOID("origin", parent.HeadOID)
-	_ = g.FetchOID("origin", child.HeadOID)
-
-	if s.TargetSelf {
-		if placed, _ := targetPlacedDryRun(g, s, defaultBranch, parent.HeadOID, child.HeadOID); placed {
-			fmt.Fprintf(out, "  #%d (%s) ✓ already based on #%d — no change\n", s.PR, child.Title, s.ParentPR)
-			return
-		}
-	}
-
-	was := ""
-	if child.BaseRef != s.NewBaseRef {
-		was = fmt.Sprintf(" (was %s)", child.BaseRef)
-	}
-	fmt.Fprintf(out, "  #%d (%s) → rebase onto %s%s\n", s.PR, child.Title, s.NewBaseRef, was)
-
-	fork, err := resolveFork(g, baseRef(defaultBranch, s, parent.HeadOID), s, child, parent, keep, mergedSubjects)
-	if err != nil {
-		var unknown *forkUnknownError
-		if errors.As(err, &unknown) {
-			fmt.Fprintf(out, "      ⚠ %v\n", err)
-		} else {
-			fmt.Fprintf(out, "      (could not compute fork point: %v)\n", err)
-		}
-		return
-	}
-
-	if dropped := resolveDropped(g, defaultBranch, s.NewBaseRef, fork.OID); len(dropped) > 0 {
-		via := fmt.Sprintf("parent #%d", s.ParentPR)
-		if s.ParentMerged {
-			via = fmt.Sprintf("already merged via #%d", s.ParentPR)
-		}
-		fmt.Fprintf(out, "      drop %s  (%s; fork: %s)\n", summarize(dropped), via, fork.Method)
-	}
-
-	kept, err := g.RevList(fork.OID + ".." + child.HeadOID)
-	if err != nil {
-		fmt.Fprintf(out, "      (could not list kept commits: %v)\n", err)
-		return
-	}
-	fmt.Fprintf(out, "      keep %s\n", summarize(kept))
-}
-
-// targetPlacedDryRun reports whether the target step is already in place, for
-// dry-run reporting. Open parent: the parent's current head is already an
-// ancestor of the target. Merged parent: the target sits on the default branch
-// with the old parent commits shed.
-func targetPlacedDryRun(g *git.Git, s replant.Step, defaultBranch, parentHeadOID, childHeadOID string) (bool, error) {
-	if !s.ParentMerged {
-		return g.IsAncestor(parentHeadOID, childHeadOID)
-	}
-	base, err := g.RevParse("origin/" + defaultBranch)
-	if err != nil {
-		return false, err
-	}
-	return g.AlreadyReplanted(base, parentHeadOID, childHeadOID)
-}
-
 // resolveDropped lists the parent commits the rebase sheds: the range from the
 // new base to the fork point. Best-effort — returns nil if the new base can't
 // be resolved locally.
@@ -253,26 +186,4 @@ func resolveDropped(g *git.Git, defaultBranch, newBaseRef, fork string) []git.Co
 		return nil
 	}
 	return dropped
-}
-
-// summarize renders a commit count and a short preview of the range.
-func summarize(commits []git.Commit) string {
-	n := len(commits)
-	noun := "commits"
-	if n == 1 {
-		noun = "commit"
-	}
-	newest := short(commits[0].OID)
-	oldest := short(commits[n-1].OID)
-	if n == 1 {
-		return fmt.Sprintf("%d %s  %s %s", n, noun, newest, commits[0].Subject)
-	}
-	return fmt.Sprintf("%d %s  %s..%s", n, noun, oldest, newest)
-}
-
-func short(oid string) string {
-	if len(oid) > 7 {
-		return oid[:7]
-	}
-	return oid
 }

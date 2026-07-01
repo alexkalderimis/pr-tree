@@ -15,7 +15,7 @@ import (
 	"github.com/alexkalderimis/pr-tree/internal/tree"
 )
 
-func runApply(ctx context.Context, repoFlag string, args []string, yes, reRequest bool, parent, keep int, in io.Reader, out io.Writer) error {
+func runApply(ctx context.Context, repoFlag string, args []string, yes, reRequest bool, parent, keep int, color bool, in io.Reader, out io.Writer) error {
 	repo, err := config.Resolve(repoFlag)
 	if err != nil {
 		return err
