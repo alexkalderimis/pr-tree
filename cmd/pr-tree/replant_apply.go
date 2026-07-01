@@ -11,6 +11,7 @@ import (
 	"github.com/alexkalderimis/pr-tree/internal/config"
 	"github.com/alexkalderimis/pr-tree/internal/git"
 	"github.com/alexkalderimis/pr-tree/internal/github"
+	"github.com/alexkalderimis/pr-tree/internal/render"
 	"github.com/alexkalderimis/pr-tree/internal/replant"
 	"github.com/alexkalderimis/pr-tree/internal/tree"
 )
@@ -80,6 +81,10 @@ func runApply(ctx context.Context, repoFlag string, args []string, yes, reReques
 	// For a drifted target (squash-merged parent), recognising the parent's
 	// commits on the branch needs the parent's actual commit subjects.
 	mergedSubjects := mergedParentSubjects(ctx, client, repo, plan, byNum)
+
+	view := buildReplantView(g, byNum, forest, defaultBranch, target, keep, plan, mergedSubjects, "")
+	fmt.Fprint(out, render.ReplantPlan(view, render.Options{Color: color}))
+	fmt.Fprintln(out)
 
 	// Phase A: rebase every descendant locally; nothing is pushed yet.
 	var rebased []replant.Step
