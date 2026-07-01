@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -67,6 +70,62 @@ func runList(ctx context.Context, repoFlag string, mine, toReview, color bool, o
 	text := render.Render(selected, render.Options{ReviewPending: pending, Color: color})
 	_, err = out.Write([]byte(text))
 	return err
+}
+
+type selector int
+
+const (
+	selNone selector = iota
+	selRoot
+	selParent
+	selTree
+)
+
+// chooseSelector resolves the active Stage-1 selector. --root, --parent, and
+// --tree are mutually exclusive.
+func chooseSelector(root, parentSet, treeSet bool) (selector, error) {
+	n := 0
+	if root {
+		n++
+	}
+	if parentSet {
+		n++
+	}
+	if treeSet {
+		n++
+	}
+	if n > 1 {
+		return selNone, errors.New("--root, --parent, and --tree are mutually exclusive")
+	}
+	switch {
+	case root:
+		return selRoot, nil
+	case parentSet:
+		return selParent, nil
+	case treeSet:
+		return selTree, nil
+	default:
+		return selNone, nil
+	}
+}
+
+// parsePRNumber parses a PR number, tolerating a leading '#'.
+func parsePRNumber(s string) (int, error) {
+	n, err := strconv.Atoi(strings.TrimPrefix(strings.TrimSpace(s), "#"))
+	if err != nil {
+		return 0, fmt.Errorf("invalid PR number %q", s)
+	}
+	return n, nil
+}
+
+// prForBranch returns the number of the first live PR whose head branch matches.
+func prForBranch(branch string, prs []tree.PullRequest) (int, bool) {
+	for _, pr := range prs {
+		if pr.State.IsLive() && pr.HeadRef == branch {
+			return pr.Number, true
+		}
+	}
+	return 0, false
 }
 
 // fetchMissingParents looks up PRs referenced via `upstream:` links that are
