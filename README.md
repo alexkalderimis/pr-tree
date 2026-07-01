@@ -35,6 +35,16 @@ List PRs that are in your review queue, including the context of other PRs in th
 #1240 (Another one, OPEN) <== Review pending
 ```
 
+Filter the listing further:
+
+- `--root` — only root PRs (those with no unmerged parent), shown as a flat list
+- `--parent PRNO` — the sub-tree descending from a PR (empty `PRNO` = the current branch's PR)
+- `--tree PRNO` — the whole tree a PR belongs to, ancestors and descendants (empty `PRNO` = the current branch's PR)
+- `--approved` — only approved PRs
+- `--active` — only non-draft PRs
+
+`--root`, `--parent`, and `--tree` are mutually exclusive. `--approved` and `--active` narrow whichever set is selected, pruning non-matching PRs and sliding survivors up to their nearest surviving ancestor.
+
 Other commands:
 
 - `replant` - rebase all descendants (infers the current PR from the current branch, accepts `[#PR_ID]` argument)
