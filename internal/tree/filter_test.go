@@ -39,6 +39,28 @@ func TestReviewPending(t *testing.T) {
 	eq(t, keys, []int{2})
 }
 
+func TestSubtree(t *testing.T) {
+	// #1 -> #2 -> #3 ; #1 -> #4
+	prs := []PullRequest{
+		{Number: 1, State: StateOpen, BaseRef: "main", HeadRef: "a"},
+		{Number: 2, State: StateOpen, BaseRef: "a", HeadRef: "b"},
+		{Number: 3, State: StateOpen, BaseRef: "b", HeadRef: "c"},
+		{Number: 4, State: StateOpen, BaseRef: "a", HeadRef: "d"},
+	}
+	forest := BuildForest(prs, "main")
+
+	got := Subtree(forest, 2)
+	eq(t, numbers(got), []int{2}) // #2 is the single root of the returned forest
+	if len(got) != 1 || numbers(got[0].Children) == nil {
+		t.Fatalf("expected #2 to retain child #3")
+	}
+	eq(t, numbers(got[0].Children), []int{3})
+
+	if Subtree(forest, 99) != nil {
+		t.Fatalf("absent PR should yield nil")
+	}
+}
+
 func TestLiveRoots(t *testing.T) {
 	// #1 MERGED (root) -> #2 OPEN -> #3 OPEN ; #4 OPEN (root) -> #5 DRAFT
 	// #6 CLOSED (root) -> #7 OPEN

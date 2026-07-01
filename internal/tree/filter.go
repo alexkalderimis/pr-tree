@@ -78,6 +78,28 @@ func ReviewPending(forest []*Node, f Filter) map[int]bool {
 	return out
 }
 
+// Subtree returns a single-root forest containing the node for prNo and all its
+// descendants, or nil if prNo is not present in the forest.
+func Subtree(forest []*Node, prNo int) []*Node {
+	if n := findNode(forest, prNo); n != nil {
+		return []*Node{n}
+	}
+	return nil
+}
+
+// findNode returns the node for prNo anywhere in the forest, or nil.
+func findNode(forest []*Node, prNo int) *Node {
+	for _, n := range forest {
+		if n.PR.Number == prNo {
+			return n
+		}
+		if found := findNode(n.Children, prNo); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
 // LiveRoots returns a flat list of "live roots": every node with no unmerged
 // parent — i.e. a forest root, or a node whose parent is MERGED. Only
 // StateMerged counts; a CLOSED parent does not make its child a live root.
