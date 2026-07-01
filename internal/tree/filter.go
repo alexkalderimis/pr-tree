@@ -77,3 +77,25 @@ func ReviewPending(forest []*Node, f Filter) map[int]bool {
 	}
 	return out
 }
+
+// LiveRoots returns a flat list of "live roots": every node with no unmerged
+// parent — i.e. a forest root, or a node whose parent is MERGED. Only
+// StateMerged counts; a CLOSED parent does not make its child a live root.
+// Returned nodes are shallow copies with children cleared, so the result
+// renders flat and the input forest is not mutated.
+func LiveRoots(forest []*Node) []*Node {
+	var out []*Node
+	var walk func(n *Node, parentMerged, isRoot bool)
+	walk = func(n *Node, parentMerged, isRoot bool) {
+		if isRoot || parentMerged {
+			out = append(out, &Node{PR: n.PR})
+		}
+		for _, c := range n.Children {
+			walk(c, n.PR.State == StateMerged, false)
+		}
+	}
+	for _, root := range forest {
+		walk(root, false, true)
+	}
+	return out
+}

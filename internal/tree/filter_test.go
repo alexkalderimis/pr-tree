@@ -38,3 +38,34 @@ func TestReviewPending(t *testing.T) {
 	sort.Ints(keys)
 	eq(t, keys, []int{2})
 }
+
+func TestLiveRoots(t *testing.T) {
+	// #1 MERGED (root) -> #2 OPEN -> #3 OPEN ; #4 OPEN (root) -> #5 DRAFT
+	// #6 CLOSED (root) -> #7 OPEN
+	prs := []PullRequest{
+		{Number: 1, State: StateMerged, BaseRef: "main", HeadRef: "a"},
+		// #1 is MERGED, so its head branch "a" is not "live" and branch topology
+		// can't link #2 under it (same rule as the CLOSED case below); use an
+		// explicit upstream link so #2 genuinely nests under merged #1 — this is
+		// what exercises the "parent is MERGED -> live root" path.
+		{Number: 2, State: StateOpen, BaseRef: "main", HeadRef: "b", Body: "upstream: #1"},
+		{Number: 3, State: StateOpen, BaseRef: "b", HeadRef: "c"},
+		{Number: 4, State: StateOpen, BaseRef: "main", HeadRef: "d"},
+		{Number: 5, State: StateDraft, BaseRef: "d", HeadRef: "e"},
+		{Number: 6, State: StateClosed, BaseRef: "main", HeadRef: "f"},
+		// #6 is CLOSED, so its head branch "f" is not "live" (BuildForest.IsLive)
+		// and branch topology can't link #7 under it; use an explicit upstream
+		// link so #7 is genuinely nested under closed #6 in the built forest.
+		{Number: 7, State: StateOpen, BaseRef: "main", HeadRef: "g", Body: "upstream: #6"},
+	}
+	forest := BuildForest(prs, "main")
+	got := LiveRoots(forest)
+	// #1,#4,#6 are forest roots; #2 sits under MERGED #1 so it is a live root.
+	// #3 sits under OPEN #2, #5 under OPEN #4, #7 under CLOSED #6 -> not live roots.
+	eq(t, numbers(got), []int{1, 2, 4, 6})
+	for _, n := range got {
+		if len(n.Children) != 0 {
+			t.Fatalf("LiveRoots node #%d should be flat, has %d children", n.PR.Number, len(n.Children))
+		}
+	}
+}
