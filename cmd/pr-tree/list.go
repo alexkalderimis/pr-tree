@@ -13,31 +13,59 @@ import (
 	"golang.org/x/term"
 
 	"github.com/alexkalderimis/pr-tree/internal/config"
+	"github.com/alexkalderimis/pr-tree/internal/git"
 	"github.com/alexkalderimis/pr-tree/internal/github"
 	"github.com/alexkalderimis/pr-tree/internal/render"
 	"github.com/alexkalderimis/pr-tree/internal/tree"
 )
 
 func newListCmd() *cobra.Command {
-	var mine, toReview, noColor bool
+	var mine, toReview, noColor, root, approved, active bool
+	var parent, treeArg string
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List PRs as trees",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// TTY detection probes os.Stdout directly (not cmd.OutOrStdout());
-			// in normal use they are the same, and this matches typical CLI
-			// behavior of basing color on the process's real stdout.
 			color := colorEnabled(noColor, os.Getenv("NO_COLOR"), term.IsTerminal(int(os.Stdout.Fd())))
-			return runList(cmd.Context(), repoFlag, mine, toReview, color, cmd.OutOrStdout())
+			sel, err := chooseSelector(root, cmd.Flags().Changed("parent"), cmd.Flags().Changed("tree"))
+			if err != nil {
+				return err
+			}
+			// The raw PRNO string for the active selector ("" means current branch).
+			var prnoArg string
+			switch sel {
+			case selParent:
+				prnoArg = parent
+			case selTree:
+				prnoArg = treeArg
+			}
+			opts := listOptions{
+				mine: mine, toReview: toReview, approved: approved, active: active,
+				sel: sel, prnoArg: prnoArg, color: color,
+			}
+			return runList(cmd.Context(), repoFlag, opts, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().BoolVar(&mine, "mine", false, "Only show trees containing PRs you authored")
 	cmd.Flags().BoolVar(&toReview, "to-review", false, "Only show trees containing PRs awaiting your review")
+	cmd.Flags().BoolVar(&root, "root", false, "Only root nodes (PRs with no unmerged parent), shown flat")
+	cmd.Flags().StringVar(&parent, "parent", "", "Tree of nodes descending from PR (empty = current branch's PR)")
+	cmd.Flags().StringVar(&treeArg, "tree", "", "Whole tree containing PR, ancestors and descendants (empty = current branch's PR)")
+	cmd.Flags().BoolVar(&approved, "approved", false, "Only PRs that have been approved")
+	cmd.Flags().BoolVar(&active, "active", false, "Only PRs that are not drafts")
 	cmd.Flags().BoolVar(&noColor, "no-color", false, "Disable colored output")
 	return cmd
 }
 
-func runList(ctx context.Context, repoFlag string, mine, toReview, color bool, out io.Writer) error {
+// listOptions bundles the resolved list flags for runList.
+type listOptions struct {
+	mine, toReview, approved, active bool
+	sel                              selector
+	prnoArg                          string // raw PRNO for selParent/selTree; "" = current branch
+	color                            bool
+}
+
+func runList(ctx context.Context, repoFlag string, o listOptions, out io.Writer) error {
 	repo, err := config.Resolve(repoFlag)
 	if err != nil {
 		return err
@@ -63,13 +91,54 @@ func runList(ctx context.Context, repoFlag string, mine, toReview, color bool, o
 	prs = append(prs, fetchMissingParents(ctx, client, repo, prs)...)
 
 	forest := tree.BuildForest(prs, defaultBranch)
-	filter := tree.Filter{Mine: mine, ToReview: toReview, Viewer: viewer}
-	selected := tree.SelectTrees(forest, filter)
-	pending := tree.ReviewPending(forest, filter)
 
-	text := render.Render(selected, render.Options{ReviewPending: pending, Color: color})
+	// Stage 1: selector.
+	working := forest
+	switch o.sel {
+	case selRoot:
+		working = tree.LiveRoots(forest)
+	case selParent, selTree:
+		prno, err := resolvePRNo(o.prnoArg, prs)
+		if err != nil {
+			return err
+		}
+		if o.sel == selParent {
+			working = tree.Subtree(forest, prno)
+		} else {
+			working = tree.WholeTree(forest, prno)
+		}
+	}
+
+	// Stage 2: narrowing.
+	filter := tree.Filter{
+		Mine: o.mine, ToReview: o.toReview,
+		Approved: o.approved, Active: o.active, Viewer: viewer,
+	}
+	if o.approved || o.active {
+		working = tree.PruneNodes(working, filter.Keeps)
+	}
+	selected := tree.SelectTrees(working, filter)
+	pending := tree.ReviewPending(working, filter)
+
+	text := render.Render(selected, render.Options{ReviewPending: pending, Color: o.color})
 	_, err = out.Write([]byte(text))
 	return err
+}
+
+// resolvePRNo turns a selector's raw PRNO argument into a PR number. An empty
+// argument means the PR of the current branch.
+func resolvePRNo(arg string, prs []tree.PullRequest) (int, error) {
+	if strings.TrimSpace(arg) != "" {
+		return parsePRNumber(arg)
+	}
+	branch, err := git.New("").CurrentBranch()
+	if err != nil {
+		return 0, fmt.Errorf("inferring current PR: %w (pass an explicit PR number)", err)
+	}
+	if n, ok := prForBranch(branch, prs); ok {
+		return n, nil
+	}
+	return 0, fmt.Errorf("no open PR has head branch %q — pass an explicit PR number", branch)
 }
 
 type selector int
