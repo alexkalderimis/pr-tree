@@ -137,6 +137,7 @@ func buildDriftRepo(t *testing.T) (g *git.Git, pOID, qOID, masterTip string) {
 	if masterTip, err = g.RevParse("HEAD"); err != nil {
 		t.Fatal(err)
 	}
+	mustGit(t, dir, "update-ref", "refs/remotes/origin/master", masterTip)
 	return g, pOID, qOID, masterTip
 }
 

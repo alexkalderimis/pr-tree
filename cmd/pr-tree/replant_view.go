@@ -31,7 +31,7 @@ func findNode(forest []*tree.Node, num int) *tree.Node {
 func buildReplantView(g *git.Git, byNum map[int]tree.PullRequest, forest []*tree.Node, defaultBranch string, target, keep int, plan []replant.Step, mergedSubjects map[string]bool, footer string) render.ReplantPlanInput {
 	tpr := byNum[target]
 	in := render.ReplantPlanInput{
-		Header: "Replant plan for #" + itoa(target) + " (" + tpr.Title + ")",
+		Header: "Replant plan for #" + strconv.Itoa(target) + " (" + tpr.Title + ")",
 		Target: findNode(forest, target),
 		Footer: footer,
 	}
@@ -58,14 +58,7 @@ func buildReplantView(g *git.Git, byNum map[int]tree.PullRequest, forest []*tree
 	child := byNum[ts.PR]
 	_ = g.FetchOID("origin", parent.HeadOID)
 	_ = g.FetchOID("origin", child.HeadOID)
-	// Use the step's recorded new base ref for the fork search. For a merged
-	// parent this is the default branch name (already set by replant.Plan), and
-	// resolves locally even when origin tracking refs aren't available.
-	forkBaseRef := baseRef(defaultBranch, *ts, parent.HeadOID)
-	if ts.ParentMerged {
-		forkBaseRef = ts.NewBaseRef
-	}
-	fork, err := resolveFork(g, forkBaseRef, *ts, child, parent, keep, mergedSubjects)
+	fork, err := resolveFork(g, baseRef(defaultBranch, *ts, parent.HeadOID), *ts, child, parent, keep, mergedSubjects)
 	if err != nil {
 		var unknown *forkUnknownError
 		if errors.As(err, &unknown) {
@@ -80,4 +73,3 @@ func buildReplantView(g *git.Git, byNum map[int]tree.PullRequest, forest []*tree
 	return in
 }
 
-func itoa(n int) string { return strconv.Itoa(n) }
