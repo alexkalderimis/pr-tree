@@ -73,4 +73,3 @@ func buildReplantView(g *git.Git, byNum map[int]tree.PullRequest, forest []*tree
 	in.DropVia = ts.ParentPR
 	return in
 }
-
