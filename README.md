@@ -48,7 +48,19 @@ Filter the listing further:
 Other commands:
 
 - `replant` - rebase all descendants (infers the current PR from the current branch, accepts `[#PR_ID]` argument)
-- `annotate` - update the PR descriptions of all PRs in the tree with a `links:` section including `upstream` and `downstream` links, so that the stack is navigable within GitHub
+- `annotate` - upsert a machine-managed links block (immediate `upstream`/`downstream` PRs) into the description of every PR in a tree, so the stack is navigable within GitHub
+
+`annotate` is **dry-run by default**: it prints a coloured diff of each PR
+description it would change and writes nothing unless you pass `--apply`. The
+target defaults to the current branch's PR, or pass `[#PR]`; the whole tree the
+target belongs to is annotated. Existing "Stacked on #N" notes and prior
+pr-tree blocks are replaced, so re-running is idempotent.
+
+Flags:
+
+- `--apply` — write the descriptions (omit for dry-run).
+- `-y` / `--yes` — skip the `Update N PR description(s)? [y/N]` confirmation.
+- `--no-color` — disable coloured output.
 
 `replant` is **dry-run by default**: it prints, for each descendant, which commits would be dropped and which kept, but performs no rebase or force-push unless you pass `--apply`.
 
@@ -94,7 +106,7 @@ resolving skips branches that were already successfully replanted.
 
 After a squash-merge, the redundant parent commits are identified **structurally** — `replant` rebases each child with `git rebase --onto <new-base> <fork-point> <child>`, where the fork point is `git merge-base` of the parent's recorded head (GitHub's `headRefOid`) and the child's head. This drops exactly the merged commits regardless of squashing, where patch-id detection (`git cherry`) would not.
 
-> **Note:** `list` and `replant` (dry-run and `--apply`) are implemented; `annotate` is planned. See [ROADMAP.md](ROADMAP.md).
+> **Note:** `list`, `replant`, and `annotate` are implemented. See [ROADMAP.md](ROADMAP.md).
 
 ### Color
 

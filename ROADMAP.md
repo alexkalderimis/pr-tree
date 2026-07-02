@@ -8,7 +8,7 @@ Tracking the build of `pr-tree`. See the full design in
 | Command | State | Notes |
 |---|---|---|
 | `list` | ✅ Done | Read-only tree rendering with `--mine` / `--to-review`. First build. |
-| `annotate` | ⬜ Planned | Upsert a `links:` (`upstream`/`downstream`) section into PR descriptions. |
+| `annotate` | ✅ Done | Upsert a marker-wrapped links block (`upstream`/`downstream`) into every PR in a tree; dry-run with a coloured diff, `--apply` to write. |
 | `replant` | ✅ Done | Dry-run plan + `--apply` (rebase, idempotent resume, `--force-with-lease` push, `--re-request-reviews`). |
 
 ## Foundations (shared, built alongside `list`)
@@ -27,9 +27,16 @@ Tracking the build of `pr-tree`. See the full design in
 - [x] Render matching the README format.
 - [x] Unit tests for `tree` / `render`; mocked test for `github`.
 
-## `annotate` — next
+## `annotate` — done
 
-- [ ] Design (idempotent upsert, link format, dry-run, scope of tree to touch).
+- [x] Design: [`docs/superpowers/specs/2026-07-02-annotate-design.md`](docs/superpowers/specs/2026-07-02-annotate-design.md).
+- [x] Marker-wrapped links block; immediate upstream/downstream; parseable by
+  `tree.ParseUpstream`.
+- [x] Idempotent upsert (`internal/annotate`): replace prior pr-tree block in
+  place, strip free-form "stacked on" notes.
+- [x] Coloured unified diff of the description (`internal/render`).
+- [x] `updatePullRequest` mutation (`internal/github`).
+- [x] `annotate [#PR]` dry-run + `--apply` behind a `[y/N]` prompt (`-y` skips).
 
 ## `replant` — last
 
