@@ -68,3 +68,32 @@ func TestAnnotatePlanCollapsesContext(t *testing.T) {
 		t.Errorf("context not collapsed, too many context lines:\n%s", got)
 	}
 }
+
+func TestAnnotatePlanEmptyOldBodyNoSpuriousDelete(t *testing.T) {
+	items := []AnnotateItem{
+		{Number: 1, Title: "X", Change: ChangeInsert, OldBody: "", NewBody: "block line 1\nblock line 2"},
+	}
+	got := AnnotatePlan(items, Options{Color: false})
+	if strings.Contains(got, "- ") {
+		t.Errorf("empty old body produced a spurious deletion line:\n%s", got)
+	}
+	if !strings.Contains(got, "+ block line 1") {
+		t.Errorf("missing inserted line:\n%s", got)
+	}
+}
+
+func TestAnnotatePlanTrailingNewlineNoSpuriousLine(t *testing.T) {
+	// Bodies differ ONLY by an appended block; the shared prefix has a trailing
+	// newline. The diff must not show a spurious blank +/- line from the split.
+	items := []AnnotateItem{
+		{Number: 1, Title: "X", Change: ChangeUpdate, OldBody: "Intro.\n", NewBody: "Intro.\nblock"},
+	}
+	got := AnnotatePlan(items, Options{Color: false})
+	// The only added line should be "block"; there must be no bare "+ " or "- " (empty) lines.
+	if strings.Contains(got, "+ \n") || strings.Contains(got, "- \n") {
+		t.Errorf("spurious blank diff line from trailing newline:\n%q", got)
+	}
+	if !strings.Contains(got, "+ block") {
+		t.Errorf("missing added block line:\n%s", got)
+	}
+}

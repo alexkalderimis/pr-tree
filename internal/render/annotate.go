@@ -36,7 +36,7 @@ func AnnotatePlan(items []AnnotateItem, opts Options) string {
 		title := style(it.Title, opts.Color, ansiBold)
 		b.WriteString("  " + num + " (" + title + ")  " + changeLabel(it.Change) + "\n")
 		if it.Change != ChangeNone {
-			ops := diffLines(strings.Split(it.OldBody, "\n"), strings.Split(it.NewBody, "\n"))
+			ops := diffLines(splitLines(it.OldBody), splitLines(it.NewBody))
 			b.WriteString(renderDiff(ops, opts.Color))
 		}
 		b.WriteByte('\n')
@@ -53,6 +53,17 @@ func changeLabel(c AnnotateChange) string {
 	default:
 		return "no change"
 	}
+}
+
+// splitLines splits a PR body into lines for diffing. An empty body yields no
+// lines, and a single trailing newline is treated as a line terminator rather
+// than an extra empty line, so diffs of real PR bodies don't show spurious
+// blank +/- lines.
+func splitLines(body string) []string {
+	if body == "" {
+		return nil
+	}
+	return strings.Split(strings.TrimSuffix(body, "\n"), "\n")
 }
 
 type diffKind int
