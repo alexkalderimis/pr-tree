@@ -24,6 +24,20 @@ func TestParseUpstream(t *testing.T) {
 		{"not upstreaming", "upstreaming: #5", 0},
 		// A "stream"-suffixed word that isn't upstream must not match.
 		{"downstream not matched", "Downstream (merge later): #99", 0},
+		// Human "stacked on:" notes are recognised as an upstream link too. The
+		// colon is required, which distinguishes a deliberate label from prose
+		// that merely mentions being "stacked on" something.
+		{"stacked on", "stacked on: #123", 123},
+		{"stacked on capitalised", "Stacked on: #123", 123},
+		{"stacked on chain first", "stacked on: #123 → #100", 123},
+		{"stacked on after prose", "A follow-up change.\nStacked on: #55", 55},
+		{"stacked on no space", "stacked on:#7", 7},
+		// An explicit upstream: link wins over a stacked on: note.
+		{"upstream beats stacked on", "upstream: #5\nstacked on: #9", 5},
+		// "stacked onto:" is not the "stacked on:" label — colon must follow "on".
+		{"stacked onto not matched", "stacked onto: #7", 0},
+		// Without the colon it's prose, not a label — don't match.
+		{"stacked on prose no colon", "This is stacked on #7 for now", 0},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
