@@ -272,6 +272,23 @@ func (c *Client) RequestReviews(ctx context.Context, prNodeID string, userIDs []
 	return c.do(ctx, requestReviewsMutation, vars, &out)
 }
 
+const updatePRBodyMutation = `mutation($id:ID!,$body:String!){
+  updatePullRequest(input:{pullRequestId:$id,body:$body}){pullRequest{number}}
+}`
+
+// UpdatePullRequestBody replaces a pull request's description (body).
+func (c *Client) UpdatePullRequestBody(ctx context.Context, nodeID, body string) error {
+	var out struct {
+		UpdatePullRequest struct {
+			PullRequest struct {
+				Number int `json:"number"`
+			} `json:"pullRequest"`
+		} `json:"updatePullRequest"`
+	}
+	vars := map[string]any{"id": nodeID, "body": body}
+	return c.do(ctx, updatePRBodyMutation, vars, &out)
+}
+
 const viewerQuery = `query{viewer{login}}`
 
 // Viewer returns the authenticated user's login.

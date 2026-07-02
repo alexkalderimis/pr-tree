@@ -150,3 +150,25 @@ func TestFetchPRsByNumber(t *testing.T) {
 		t.Fatalf("PR decoded wrong: %+v", prs[0])
 	}
 }
+
+func TestUpdatePullRequestBody(t *testing.T) {
+	var gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		io.WriteString(w, `{"data":{"updatePullRequest":{"pullRequest":{"number":7}}}}`)
+	}))
+	defer srv.Close()
+
+	c := &Client{token: "t", endpoint: srv.URL, httpClient: srv.Client()}
+	err := c.UpdatePullRequestBody(context.Background(), "PR_node", "new body")
+	if err != nil {
+		t.Fatalf("UpdatePullRequestBody: %v", err)
+	}
+	if !strings.Contains(gotBody, "updatePullRequest") {
+		t.Errorf("body missing updatePullRequest mutation: %s", gotBody)
+	}
+	if !strings.Contains(gotBody, "PR_node") || !strings.Contains(gotBody, "new body") {
+		t.Errorf("body missing variables: %s", gotBody)
+	}
+}
