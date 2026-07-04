@@ -49,6 +49,7 @@ Other commands:
 
 - `replant` - rebase all descendants (infers the current PR from the current branch, accepts `[#PR_ID]` argument)
 - `annotate` - upsert a machine-managed links block (immediate `upstream`/`downstream` PRs) into the description of every PR in a tree, so the stack is navigable within GitHub
+- `go [up|down|root|leaf]` - check out a branch by its position relative to the current PR: `up` to the parent (or the default branch if there is no live parent), `down` to a child, `root` to the nearest unmerged root, `leaf` to the end of the sequence. Prompts when `down`/`leaf` is ambiguous.
 
 `annotate` is **dry-run by default**: it prints a coloured diff of each PR
 description it would change and writes nothing unless you pass `--apply`. The
@@ -105,6 +106,20 @@ progress and prints guidance for resolving and resuming. Re-running after
 resolving skips branches that were already successfully replanted.
 
 After a squash-merge, the redundant parent commits are identified **structurally** — `replant` rebases each child with `git rebase --onto <new-base> <fork-point> <child>`, where the fork point is `git merge-base` of the parent's recorded head (GitHub's `headRefOid`) and the child's head. This drops exactly the merged commits regardless of squashing, where patch-id detection (`git cherry`) would not.
+
+`go` moves between branches in a stack without having to remember branch names.
+It must be run from an open PR's branch and aborts if the working tree is dirty.
+
+```sh
+> pr-tree go up      # check out the parent PR's branch
+> pr-tree go down    # descend to a child (prompts if there is more than one)
+> pr-tree go root    # jump to the nearest unmerged root of the tree
+> pr-tree go leaf    # jump to the tip (prompts if the tree has multiple leaves)
+```
+
+Flags:
+
+- `-n` / `--dry-run` — print the target branch (or the candidate list, when a choice would be required) instead of checking out.
 
 > **Note:** `list`, `replant`, and `annotate` are implemented. See [ROADMAP.md](ROADMAP.md).
 

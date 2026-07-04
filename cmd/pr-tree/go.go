@@ -2,11 +2,19 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 
+	"github.com/spf13/cobra"
+	"golang.org/x/term"
+
+	"github.com/alexkalderimis/pr-tree/internal/config"
+	"github.com/alexkalderimis/pr-tree/internal/git"
+	"github.com/alexkalderimis/pr-tree/internal/github"
 	"github.com/alexkalderimis/pr-tree/internal/tree"
 )
 
@@ -91,4 +99,111 @@ func chooseNode(in io.Reader, out io.Writer, prompt string, nodes []*tree.Node) 
 		}
 		fmt.Fprintf(out, "please enter a number between 1 and %d\n", len(nodes))
 	}
+}
+
+func newGoCmd() *cobra.Command {
+	var dryRun bool
+	cmd := &cobra.Command{
+		Use:   "go <up|down|root|leaf>",
+		Short: "Navigate the PR tree by checking out a related branch",
+		Long: "Check out a branch by its position relative to the current PR:\n" +
+			"  up    the parent PR's branch (or the default branch if it has no live parent)\n" +
+			"  down  a child PR's branch (prompts when there is more than one)\n" +
+			"  root  the nearest unmerged root of the current tree\n" +
+			"  leaf  the end of the current sequence (prompts when there is more than one leaf)\n\n" +
+			"The current branch must be an open PR's head branch. Aborts if the " +
+			"working tree has uncommitted changes.",
+		Args:      cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
+		ValidArgs: []string{"up", "down", "root", "leaf"},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			interactive := term.IsTerminal(int(os.Stdin.Fd()))
+			return runGo(cmd.Context(), repoFlag, args[0], dryRun, interactive, cmd.InOrStdin(), cmd.OutOrStdout())
+		},
+	}
+	cmd.Flags().BoolVarP(&dryRun, "dry-run", "n", false, "Print the target branch instead of checking out")
+	return cmd
+}
+
+// describe names a resolution's destination for user-facing messages.
+func describe(res resolution) string {
+	if res.prNum == 0 {
+		return res.branch
+	}
+	return fmt.Sprintf("#%d (%s)", res.prNum, res.branch)
+}
+
+func runGo(ctx context.Context, repoFlag, direction string, dryRun, interactive bool, in io.Reader, out io.Writer) error {
+	repo, err := config.Resolve(repoFlag)
+	if err != nil {
+		return err
+	}
+	token, err := github.Token()
+	if err != nil {
+		return err
+	}
+	client := github.New(token)
+
+	prs, defaultBranch, err := client.FetchOpenPRs(ctx, repo)
+	if err != nil {
+		return fmt.Errorf("fetching PRs for %s: %w", repo, err)
+	}
+
+	g := git.New("")
+	branch, err := g.CurrentBranch()
+	if err != nil {
+		return fmt.Errorf("inferring current branch: %w", err)
+	}
+	curPR, ok := matchCurrentPR(branch, prs)
+	if !ok {
+		return fmt.Errorf("not on a branch with an open PR (current: %s) — check out a PR's branch first", branch)
+	}
+
+	forest := tree.BuildForest(prs, defaultBranch)
+	cur := tree.Find(forest, curPR.Number)
+	if cur == nil {
+		return fmt.Errorf("PR #%d is not in the current PR forest", curPR.Number)
+	}
+
+	res, err := resolve(direction, forest, cur, defaultBranch)
+	if err != nil {
+		return err
+	}
+
+	if len(res.candidates) > 0 {
+		if dryRun {
+			printNodes(out, "would prompt to choose among:", res.candidates)
+			return nil
+		}
+		if !interactive {
+			printNodes(out, "multiple candidates and stdin is not a terminal; check out one of:", res.candidates)
+			return fmt.Errorf("cannot prompt for a choice")
+		}
+		chosen, err := chooseNode(in, out, res.prompt, res.candidates)
+		if err != nil {
+			return err
+		}
+		res.branch = chosen.PR.HeadRef
+		res.prNum = chosen.PR.Number
+	}
+
+	if dryRun {
+		fmt.Fprintln(out, res.branch)
+		return nil
+	}
+	if res.branch == branch {
+		fmt.Fprintf(out, "already on %s\n", describe(res))
+		return nil
+	}
+	clean, err := g.WorktreeClean()
+	if err != nil {
+		return err
+	}
+	if !clean {
+		return fmt.Errorf("working tree has uncommitted changes; commit or stash before switching branches")
+	}
+	if err := g.Checkout(res.branch); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "Switched to %s\n", describe(res))
+	return nil
 }

@@ -14,5 +14,6 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newListCmd())
 	root.AddCommand(newReplantCmd())
 	root.AddCommand(newAnnotateCmd())
+	root.AddCommand(newGoCmd())
 	return root
 }
