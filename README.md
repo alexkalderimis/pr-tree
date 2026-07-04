@@ -121,7 +121,7 @@ Flags:
 
 - `-n` / `--dry-run` — print the target branch (or the candidate list, when a choice would be required) instead of checking out.
 
-> **Note:** `list`, `replant`, and `annotate` are implemented. See [ROADMAP.md](ROADMAP.md).
+> **Note:** `list`, `replant`, `annotate`, and `go` are implemented. See [ROADMAP.md](ROADMAP.md).
 
 ### Color
 
